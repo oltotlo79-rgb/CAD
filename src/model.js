@@ -1,8 +1,10 @@
 import { FRAME_MARGIN_MM } from './papers.js';
 import {
-  distance, angleDegOf, distancePointToSegment, rotate90Point,
+  distance, angleDegOf, distancePointToSegment, rotate90Point, catmullRomPoints,
 } from './geometry.js';
-import { dimLayout, DIM_TEXT_MM, balloonLayout, BALLOON_R_MM } from './dims.js';
+import {
+  dimLayout, DIM_TEXT_MM, balloonLayout, BALLOON_R_MM, annotationLayout,
+} from './dims.js';
 import { DEFAULT_TITLE_FIELDS } from './titleBlock.js';
 import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
 import { bomLayout } from './bom.js';
@@ -70,8 +72,10 @@ export function translateEntities(doc, ids, dx, dy) {
       e.x1 += dx; e.y1 += dy; e.x2 += dx; e.y2 += dy;
     } else if (e.type === 'rect') {
       e.x += dx; e.y += dy;
-    } else if (e.type === 'polyline') {
+    } else if (e.type === 'polyline' || e.type === 'spline') {
       e.points = e.points.map(([x, y]) => [x + dx, y + dy]);
+    } else if (e.type === 'roughness' || e.type === 'fcf') {
+      e.x += dx; e.y += dy;
     } else if (e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse') {
       e.cx += dx; e.cy += dy;
     } else if (e.type === 'text') {
@@ -115,11 +119,14 @@ export function rotate90Entities(doc, ids, center) {
       const c = rotate90Point({ x: e.x + e.width / 2, y: e.y + e.height / 2 }, center);
       const w = e.height, h = e.width;
       e.x = c.x - w / 2; e.y = c.y - h / 2; e.width = w; e.height = h;
-    } else if (e.type === 'polyline') {
+    } else if (e.type === 'polyline' || e.type === 'spline') {
       e.points = e.points.map(([x, y]) => {
         const p = rotate90Point({ x, y }, center);
         return [p.x, p.y];
       });
+    } else if (e.type === 'roughness' || e.type === 'fcf') {
+      const p = rotate90Point({ x: e.x, y: e.y }, center);
+      e.x = p.x; e.y = p.y;
     } else if (e.type === 'circle') {
       const c = rotate90Point({ x: e.cx, y: e.cy }, center);
       e.cx = c.x; e.cy = c.y;
@@ -193,6 +200,12 @@ export function entitySegments(e) {
     if (e.closed && pts.length > 2) segs.push([pts[pts.length - 1], pts[0]]);
     return segs;
   }
+  if (e.type === 'spline') {
+    const pts = catmullRomPoints(e.points, e.closed);
+    const segs = [];
+    for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1]]);
+    return segs;
+  }
   return [];
 }
 
@@ -215,8 +228,10 @@ export function mirrorEntities(doc, ids, axis, center) {
       const [nx, ny] = mp(e.x, e.y);
       e.x = axis === 'x' ? nx - e.width : nx;
       e.y = axis === 'y' ? ny - e.height : ny;
-    } else if (e.type === 'polyline') {
+    } else if (e.type === 'polyline' || e.type === 'spline') {
       e.points = e.points.map(([x, y]) => mp(x, y));
+    } else if (e.type === 'roughness' || e.type === 'fcf') {
+      [e.x, e.y] = mp(e.x, e.y);
     } else if (e.type === 'circle') {
       [e.cx, e.cy] = mp(e.cx, e.cy);
     } else if (e.type === 'arc') {
@@ -283,6 +298,8 @@ export function entitySnapPoints(e) {
       const last = e.points[e.points.length - 1];
       push(last[0], last[1], 'end');
     }
+  } else if (e.type === 'spline') {
+    for (const [x, y] of e.points) push(x, y, 'end');
   } else if (e.type === 'circle') {
     push(e.cx, e.cy, 'center');
     push(e.cx + e.r, e.cy, 'quad'); push(e.cx - e.r, e.cy, 'quad');
@@ -315,8 +332,8 @@ export function entityBounds(e, k = 1) {
     const rect = bomLayout(e, k).rect;
     return { minX: rect.x, minY: rect.y, maxX: rect.x + rect.width, maxY: rect.y + rect.height };
   }
-  if (e.type === 'dim' || e.type === 'leader') {
-    const pts = dimLayout(e, k).lines.flat();
+  if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
+    const pts = annotationLayout(e, k).lines.flat();
     const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     for (const p of pts) {
       b.minX = Math.min(b.minX, p.x); b.minY = Math.min(b.minY, p.y);
@@ -362,8 +379,8 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
     return p.x >= b.minX - tolMm && p.x <= b.maxX + tolMm &&
            p.y >= b.minY - tolMm && p.y <= b.maxY + tolMm;
   }
-  if (e.type === 'dim' || e.type === 'leader') {
-    const layout = dimLayout(e, k);
+  if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
+    const layout = annotationLayout(e, k);
     for (const [a, b] of layout.lines) {
       if (distancePointToSegment(p, a, b) <= tolMm) return true;
     }

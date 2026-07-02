@@ -14,7 +14,7 @@ import { toSVG } from './svgExport.js';
 import { titleBlockLayout } from './titleBlock.js';
 import { boundaryFromEntity } from './hatch.js';
 import { bomLayout, bomRowsFromBalloons } from './bom.js';
-import { trimLine, extendLine, offsetEntity } from './editOps.js';
+import { trimLine, extendLine, offsetEntity, filletLines } from './editOps.js';
 import { mirrorEntities } from './model.js';
 import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
 import { serialize, deserialize } from './serializer.js';
@@ -47,6 +47,7 @@ const state = {
   spaceDown: false,
   panDrag: null,   // { startScreen, startPanX, startPanY }
   moveDrag: null,  // { lastReal, snapshotPushed }
+  filletFirst: null, // フィレット1本目 { line, click }
   mouseReal: null,
 };
 
@@ -211,6 +212,7 @@ function movePan(s) {
 function setTool(tool) {
   state.tool = tool;
   state.draft = null;
+  state.filletFirst = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
   render();
@@ -236,14 +238,15 @@ function commitRect(a, b) {
 
 function finishPolyline() {
   const d = state.draft;
-  if (d?.kind !== 'polyline') return;
+  if (d?.kind !== 'polyline' && d?.kind !== 'spline') return;
   state.draft = null;
   // 連続する同一点(ダブルクリック等)を除去
   const pts = d.points.filter((p, i) =>
     i === 0 || p.x !== d.points[i - 1].x || p.y !== d.points[i - 1].y);
-  if (pts.length >= 2) {
+  const minPts = d.kind === 'spline' ? 3 : 2;
+  if (pts.length >= minPts) {
     commit(() => addEntity(state.doc, {
-      type: 'polyline', points: pts.map((pt) => [pt.x, pt.y]), closed: false, ...styleProps(),
+      type: d.kind, points: pts.map((pt) => [pt.x, pt.y]), closed: false, ...styleProps(),
     }));
   } else {
     render();
@@ -253,10 +256,13 @@ canvas.addEventListener('dblclick', (ev) => {
   if (state.tool === 'select') {
     const s = eventScreen(ev);
     const hit = hitTestScreen(s);
-    if (hit && (hit.type === 'dim' || hit.type === 'leader' || hit.type === 'text' || hit.type === 'balloon')) {
+    if (hit && ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'].includes(hit.type)) {
       ev.preventDefault();
       const initial = hit.type === 'dim' ? dimText(hit)
-        : hit.type === 'balloon' ? String(hit.number) : hit.content;
+        : hit.type === 'balloon' ? String(hit.number)
+        : hit.type === 'roughness' ? hit.value
+        : hit.type === 'fcf' ? hit.cells.join('|')
+        : hit.content;
       openTextEntry(s, 'edit', { id: hit.id }, initial);
       return;
     }
@@ -353,9 +359,9 @@ function handleToolPointerDown(s, ev) {
       state.draft = null;
     }
     render();
-  } else if (state.tool === 'polyline') {
+  } else if (state.tool === 'polyline' || state.tool === 'spline') {
     if (!state.draft) {
-      state.draft = { kind: 'polyline', points: [p], current: p };
+      state.draft = { kind: state.tool, points: [p], current: p };
     } else {
       state.draft.points.push(p);
     }
@@ -447,6 +453,64 @@ function handleToolPointerDown(s, ev) {
         override: null, layer: 'dim', lineType: 'thin',
       }));
     }
+  } else if (state.tool === 'angle') {
+    if (!state.draft) {
+      state.draft = { kind: 'angle', vertex: p, current: p };
+    } else if (!state.draft.p1) {
+      if (p.x !== state.draft.vertex.x || p.y !== state.draft.vertex.y) {
+        state.draft.p1 = p;
+      }
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const radius = geo.round6(geo.distance(d.vertex, p));
+      if (radius > 0) {
+        commit(() => addEntity(state.doc, {
+          type: 'dim', dimType: 'angle',
+          vertex: [d.vertex.x, d.vertex.y], p1: [d.p1.x, d.p1.y], p2: [p.x, p.y],
+          radius, override: null, layer: 'dim', lineType: 'thin',
+        }));
+      }
+    }
+    render();
+  } else if (state.tool === 'fillet') {
+    const hit = hitTestScreen(s);
+    if (hit && hit.type === 'line') {
+      if (!state.filletFirst) {
+        state.filletFirst = { line: hit, click: screenToReal(s) };
+        state.selection = new Set([hit.id]);
+        render();
+      } else if (hit.id !== state.filletFirst.line.id) {
+        const r = Number(el('fillet-r').value);
+        const first = state.filletFirst;
+        state.filletFirst = null;
+        state.selection.clear();
+        if (Number.isFinite(r) && r > 0) {
+          const f = filletLines(first.line, first.click, hit, screenToReal(s), r);
+          if (f) {
+            commit(() => {
+              Object.assign(first.line, f.l1);
+              Object.assign(hit, f.l2);
+              addEntity(state.doc, {
+                type: 'arc', ...f.arc,
+                layer: first.line.layer, lineType: first.line.lineType,
+              });
+            });
+          }
+        }
+        render();
+      }
+    }
+  } else if (state.tool === 'roughness') {
+    commit(() => addEntity(state.doc, {
+      type: 'roughness', x: p.x, y: p.y, value: 'Ra 6.3',
+      layer: 'note', lineType: 'thin',
+    }));
+  } else if (state.tool === 'fcf') {
+    commit(() => addEntity(state.doc, {
+      type: 'fcf', x: p.x, y: p.y, cells: ['//', '0.05', 'A'],
+      layer: 'note', lineType: 'thin',
+    }));
   } else if (state.tool === 'chamfer') {
     if (!state.draft) {
       const hit = hitTestScreen(s);
@@ -745,6 +809,8 @@ textEntry.addEventListener('keydown', (ev) => {
       commit(() => {
         if (target.type === 'dim') target.override = value || null;
         else if (target.type === 'balloon') target.number = value || target.number;
+        else if (target.type === 'roughness') target.value = value;
+        else if (target.type === 'fcf') target.cells = value.split('|').map((c) => c.trim());
         else if (value) target.content = value;
       });
     }
