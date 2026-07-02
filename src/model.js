@@ -36,7 +36,14 @@ export const DEFAULT_LAYERS = [
   { id: 'aux', name: '補助線', visible: true, printable: false },
 ];
 
+function todayString() {
+  const d = new Date();
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function createDocument({ paperSize = 'A3', orientation = 'landscape' } = {}) {
+  const titleFields = DEFAULT_TITLE_FIELDS.map((f) =>
+    (f.label === '日付' ? { ...f, value: todayString() } : { ...f }));
   return {
     format: 'seizu-tool',
     version: 1,
@@ -45,7 +52,7 @@ export function createDocument({ paperSize = 'A3', orientation = 'landscape' } =
     userOrigin: { x: FRAME_MARGIN_MM, y: FRAME_MARGIN_MM },
     grid: { mode: 'auto', manualMm: 1 },
     mirror45: null, // 45°ミラー線の通過点 {x,y}(実寸mm)。nullなら未設定
-    titleBlock: { fields: DEFAULT_TITLE_FIELDS.map((f) => ({ ...f })) },
+    titleBlock: { fields: titleFields },
     layers: DEFAULT_LAYERS.map((l) => ({ ...l })),
     nextId: 1,
     entities: [],

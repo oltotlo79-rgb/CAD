@@ -9,6 +9,13 @@ test('createDocument に既定の表題欄が入る', () => {
   assert.equal(doc.titleBlock.fields.length, DEFAULT_TITLE_FIELDS.length);
 });
 
+test('日付フィールドは作成日で初期化される', () => {
+  const doc = createDocument();
+  const date = doc.titleBlock.fields.find((f) => f.label === '日付');
+  assert.match(date.value, /^\d{4}\/\d{2}\/\d{2}$/);
+  assert.equal(Number(date.value.slice(0, 4)), new Date().getFullYear());
+});
+
 test('bind項目: 尺度・用紙は図面設定から自動反映', () => {
   const doc = createDocument({ paperSize: 'A4', orientation: 'portrait' });
   doc.scale.ratio = [1, 5];
