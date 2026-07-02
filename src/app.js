@@ -221,12 +221,34 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 // ---- パン・ズーム ----
+// 通常スクロール=パン(上下、チルト/トラックパッドで左右)、Shift+スクロール=拡大縮小
 canvas.addEventListener('wheel', (ev) => {
   ev.preventDefault();
-  const factor = ev.deltaY < 0 ? 1.2 : 1 / 1.2;
-  state.view = vt.zoomAt(state.view, eventScreen(ev), factor);
+  if (ev.shiftKey) {
+    // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
+    const dy = ev.deltaY !== 0 ? ev.deltaY : ev.deltaX;
+    const factor = dy < 0 ? 1.2 : 1 / 1.2;
+    state.view = vt.zoomAt(state.view, eventScreen(ev), factor);
+  } else {
+    const z = state.view.pxPerMm;
+    state.view = {
+      ...state.view,
+      panX: state.view.panX + ev.deltaX / z,
+      panY: state.view.panY - ev.deltaY / z,
+    };
+  }
   render();
 }, { passive: false });
+
+function zoomCenter(factor) {
+  state.view = vt.zoomAt(state.view, {
+    x: state.view.canvasWidth / 2, y: state.view.canvasHeight / 2,
+  }, factor);
+  render();
+}
+el('zoom-in').addEventListener('click', () => zoomCenter(1.25));
+el('zoom-out').addEventListener('click', () => zoomCenter(1 / 1.25));
+el('zoom-fit').addEventListener('click', () => { refitView(); render(); });
 
 function startPan(s) {
   state.panDrag = { startScreen: s, startPanX: state.view.panX, startPanY: state.view.panY };
@@ -1141,6 +1163,20 @@ window.addEventListener('keydown', (ev) => {
     return;
   }
   if (isTyping(ev)) return;
+  // 矢印キーでパン
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key)) {
+    ev.preventDefault();
+    const step = 60 / state.view.pxPerMm; // 60px相当
+    state.view = {
+      ...state.view,
+      panX: state.view.panX
+        + (ev.key === 'ArrowRight' ? step : ev.key === 'ArrowLeft' ? -step : 0),
+      panY: state.view.panY
+        + (ev.key === 'ArrowUp' ? step : ev.key === 'ArrowDown' ? -step : 0),
+    };
+    render();
+    return;
+  }
   if (ev.key === 'Enter') finishPolyline();
   if (ev.key === 'Delete' || ev.key === 'Backspace') deleteSelection();
   if (ev.ctrlKey && ev.key.toLowerCase() === 'z' && !ev.shiftKey) { ev.preventDefault(); doUndo(); }
