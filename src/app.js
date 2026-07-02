@@ -4,8 +4,11 @@ import { effectiveGridStep } from './gridCalc.js';
 import * as geo from './geometry.js';
 import {
   createDocument, addEntity, removeEntities, translateEntities,
-  duplicateEntities, entitySegments, parseScale, formatScale,
+  duplicateEntities, parseScale, formatScale,
+  rotate90Entities, entityBounds, hitTestEntity, STYLE_PRESETS,
 } from './model.js';
+import { findSnap } from './snap.js';
+import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
 import { serialize, deserialize } from './serializer.js';
 import {
   createHistory, snapshot, pushSnapshot, undo, redo, applySnapshot,
@@ -28,6 +31,8 @@ const state = {
   selection: new Set(),
   draft: null,
   gridSnap: true,
+  osnap: true,
+  snapHint: null,
   spaceDown: false,
   panDrag: null,   // { startScreen, startPanX, startPanY }
   moveDrag: null,  // { lastReal, snapshotPushed }
@@ -55,6 +60,25 @@ function snapReal(p) {
 function originToAbs(p) {
   return { x: p.x + state.doc.userOrigin.x, y: p.y + state.doc.userOrigin.y };
 }
+// オブジェクトスナップ優先、なければグリッドスナップ
+function resolvePoint(s) {
+  const raw = screenToReal(s);
+  if (state.osnap) {
+    const tolMm = 10 / pxPerRealMm();
+    const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale));
+    if (hit) {
+      state.snapHint = hit;
+      return { x: hit.x, y: hit.y };
+    }
+  }
+  state.snapHint = null;
+  return snapReal(raw);
+}
+// 作図中の線種プリセット → エンティティ属性
+function styleProps() {
+  const preset = STYLE_PRESETS[el('line-style').value] ?? STYLE_PRESETS.outline;
+  return { lineType: preset.lineType, layer: preset.layer };
+}
 
 // ---- 描画・状態表示 ----
 function render() {
@@ -76,6 +100,20 @@ function updateTitle() {
 function markDirty() {
   state.dirty = true;
   updateTitle();
+  scheduleBackup();
+}
+
+// ---- クラッシュ復元用の自動スナップショット ----
+let backupTimer = null;
+function scheduleBackup() {
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => {
+    if (state.dirty) saveBackup(serialize(state.doc), state.fileName).catch(() => {});
+  }, 2000);
+}
+function discardBackup() {
+  clearTimeout(backupTimer);
+  clearBackup().catch(() => {});
 }
 // 変更前スナップショットを積んでから mutator を実行する
 function commit(mutator) {
@@ -139,7 +177,9 @@ document.querySelectorAll('#toolbar .tool').forEach((b) =>
 
 function commitLine(a, b) {
   if (a.x === b.x && a.y === b.y) return;
-  commit(() => addEntity(state.doc, { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+  commit(() => addEntity(state.doc, {
+    type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...styleProps(),
+  }));
 }
 
 function commitRect(a, b) {
@@ -147,7 +187,7 @@ function commitRect(a, b) {
   const height = Math.abs(b.y - a.y);
   if (width === 0 || height === 0) return;
   commit(() => addEntity(state.doc, {
-    type: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width, height,
+    type: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width, height, ...styleProps(),
   }));
 }
 
@@ -160,7 +200,7 @@ function finishPolyline() {
     i === 0 || p.x !== d.points[i - 1].x || p.y !== d.points[i - 1].y);
   if (pts.length >= 2) {
     commit(() => addEntity(state.doc, {
-      type: 'polyline', points: pts.map((pt) => [pt.x, pt.y]), closed: false,
+      type: 'polyline', points: pts.map((pt) => [pt.x, pt.y]), closed: false, ...styleProps(),
     }));
   } else {
     render();
@@ -172,15 +212,11 @@ canvas.addEventListener('dblclick', () => finishPolyline());
 function hitTestScreen(s) {
   const real = screenToReal(s);
   const tolMm = 6 / pxPerRealMm();
-  let best = null;
-  let bestDist = tolMm;
-  for (const e of state.doc.entities) {
-    for (const [a, b] of entitySegments(e)) {
-      const d = geo.distancePointToSegment(real, a, b);
-      if (d <= bestDist) { best = e; bestDist = d; }
-    }
+  const k = vt.scaleK(state.doc.scale);
+  for (let i = state.doc.entities.length - 1; i >= 0; i--) {
+    if (hitTestEntity(state.doc.entities[i], real, tolMm, k)) return state.doc.entities[i];
   }
-  return best;
+  return null;
 }
 
 function selectInBox(startScreen, endScreen) {
@@ -188,16 +224,18 @@ function selectInBox(startScreen, endScreen) {
   const b = screenToReal(endScreen);
   const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
   const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
+  const k = vt.scaleK(state.doc.scale);
   for (const e of state.doc.entities) {
-    const pts = entitySegments(e).flat();
-    const inside = pts.every((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY);
-    if (inside && pts.length > 0) state.selection.add(e.id);
+    const bb = entityBounds(e, k);
+    if (bb.minX >= minX && bb.maxX <= maxX && bb.minY >= minY && bb.maxY <= maxY) {
+      state.selection.add(e.id);
+    }
   }
 }
 
 // ---- ツールのポインタ処理 ----
 function handleToolPointerDown(s, ev) {
-  const p = snapReal(screenToReal(s));
+  const p = state.tool === 'select' ? snapReal(screenToReal(s)) : resolvePoint(s);
   if (state.tool === 'select') {
     const hit = hitTestScreen(s);
     if (hit) {
@@ -238,6 +276,63 @@ function handleToolPointerDown(s, ev) {
       state.draft.points.push(p);
     }
     render();
+  } else if (state.tool === 'circle') {
+    if (!state.draft) {
+      state.draft = { kind: 'circle', center: p, current: p };
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const r = geo.round6(geo.distance(d.center, p));
+      if (r > 0) {
+        commit(() => addEntity(state.doc, {
+          type: 'circle', cx: d.center.x, cy: d.center.y, r, ...styleProps(),
+        }));
+      }
+    }
+    render();
+  } else if (state.tool === 'arc') {
+    if (!state.draft) {
+      state.draft = { kind: 'arc', stage: 1, center: p, current: p };
+    } else if (state.draft.stage === 1) {
+      if (p.x !== state.draft.center.x || p.y !== state.draft.center.y) {
+        state.draft.stage = 2;
+        state.draft.startPoint = p;
+      }
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const r = geo.round6(geo.distance(d.center, d.startPoint));
+      const start = geo.round6(geo.angleDegOf(d.center, d.startPoint));
+      let end = geo.angleDegOf(d.center, p);
+      while (end <= start) end += 360;
+      end = geo.round6(end);
+      if (r > 0) {
+        commit(() => addEntity(state.doc, {
+          type: 'arc', cx: d.center.x, cy: d.center.y, r,
+          startAngle: start, endAngle: end, ...styleProps(),
+        }));
+      }
+    }
+    render();
+  } else if (state.tool === 'ellipse') {
+    if (!state.draft) {
+      state.draft = { kind: 'ellipse', center: p, current: p };
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const rx = Math.abs(p.x - d.center.x);
+      const ry = Math.abs(p.y - d.center.y);
+      if (rx > 0 && ry > 0) {
+        commit(() => addEntity(state.doc, {
+          type: 'ellipse', cx: d.center.x, cy: d.center.y, rx, ry, ...styleProps(),
+        }));
+      }
+    }
+    render();
+  } else if (state.tool === 'text') {
+    // canvasへのフォーカス移動(mousedown既定動作)が入力欄のフォーカスを奪うのを防ぐ
+    ev.preventDefault();
+    openTextEntry(s, p);
   } else if (state.tool === 'origin') {
     commit(() => { state.doc.userOrigin = p; });
     setTool('select');
@@ -245,7 +340,7 @@ function handleToolPointerDown(s, ev) {
 }
 
 function handleToolPointerMove(s) {
-  const p = snapReal(screenToReal(s));
+  const p = state.mouseReal;
   if (state.moveDrag) {
     const dx = p.x - state.moveDrag.lastReal.x;
     const dy = p.y - state.moveDrag.lastReal.y;
@@ -299,10 +394,16 @@ canvas.addEventListener('pointerdown', (ev) => {
 canvas.addEventListener('pointermove', (ev) => {
   if (!state.view) return;
   const s = eventScreen(ev);
-  state.mouseReal = snapReal(screenToReal(s));
   if (state.panDrag) {
+    state.mouseReal = screenToReal(s);
     movePan(s);
     return;
+  }
+  if (state.moveDrag || state.draft?.kind === 'box' || state.tool === 'select') {
+    state.snapHint = null;
+    state.mouseReal = snapReal(screenToReal(s));
+  } else {
+    state.mouseReal = resolvePoint(s);
   }
   handleToolPointerMove(s);
   render();
@@ -348,6 +449,53 @@ function duplicateSelection() {
   state.selection = new Set(clones.map((e) => e.id));
   render();
 }
+function rotateSelection() {
+  if (state.selection.size === 0) return;
+  const k = vt.scaleK(state.doc.scale);
+  const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const e of state.doc.entities) {
+    if (!state.selection.has(e.id)) continue;
+    const eb = entityBounds(e, k);
+    b.minX = Math.min(b.minX, eb.minX); b.minY = Math.min(b.minY, eb.minY);
+    b.maxX = Math.max(b.maxX, eb.maxX); b.maxY = Math.max(b.maxY, eb.maxY);
+  }
+  const center = snapReal({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+  commit(() => rotate90Entities(state.doc, [...state.selection], center));
+}
+el('rotate').addEventListener('click', rotateSelection);
+
+// ---- 文字入力オーバーレイ ----
+const textEntry = el('text-entry');
+let textPos = null; // 実寸mm
+function openTextEntry(s, p) {
+  textPos = p;
+  textEntry.style.left = `${s.x}px`;
+  textEntry.style.top = `${s.y}px`;
+  textEntry.style.display = 'block';
+  textEntry.value = '';
+  textEntry.focus();
+  setTimeout(() => textEntry.focus(), 0);
+}
+function closeTextEntry() {
+  textEntry.style.display = 'none';
+  textPos = null;
+}
+textEntry.addEventListener('keydown', (ev) => {
+  ev.stopPropagation();
+  if (ev.key === 'Enter') {
+    const content = textEntry.value.trim();
+    if (content && textPos) {
+      const pos = textPos;
+      commit(() => addEntity(state.doc, {
+        type: 'text', x: pos.x, y: pos.y, content, height: 3.5,
+        layer: 'note', lineType: 'thin',
+      }));
+    }
+    closeTextEntry();
+  } else if (ev.key === 'Escape') {
+    closeTextEntry();
+  }
+});
 
 // ---- 数値入力パネル ----
 function drawLineFromInputs() {
@@ -419,6 +567,10 @@ el('grid-step').addEventListener('change', () => {
 el('grid-snap').addEventListener('change', () => {
   state.gridSnap = el('grid-snap').checked;
 });
+el('osnap').addEventListener('change', () => {
+  state.osnap = el('osnap').checked;
+  if (!state.osnap) state.snapHint = null;
+});
 
 // ---- ファイル操作 ----
 function confirmDiscard() {
@@ -434,6 +586,7 @@ function loadDocText(text, name) {
     state.draft = null;
     state.fileName = name;
     state.dirty = false;
+    discardBackup();
     syncSettingsUI();
     refitView();
     updateTitle();
@@ -451,12 +604,14 @@ async function saveFile(saveAs = false) {
   if (name) {
     state.fileName = name;
     state.dirty = false;
+    discardBackup();
     updateTitle();
   }
 }
 
 el('file-new').addEventListener('click', () => {
   if (!confirmDiscard()) return;
+  discardBackup();
   state.fileio.reset();
   state.doc = createDocument();
   state.history = createHistory(100);
@@ -517,6 +672,7 @@ window.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     state.draft = null;
     state.selection.clear();
+    closeTextEntry();
     render();
     return;
   }
@@ -538,3 +694,19 @@ window.addEventListener('keyup', (ev) => {
 resizeCanvas();
 syncSettingsUI();
 updateTitle();
+
+// クラッシュ後の復元確認(非モーダルのバナーで提示)
+loadBackup().then((b) => {
+  if (!b || !b.text) return;
+  const banner = el('restore-banner');
+  banner.style.display = 'flex';
+  el('restore-yes').onclick = () => {
+    banner.style.display = 'none';
+    loadDocText(b.text, b.name ?? '復元図面.json');
+    markDirty();
+  };
+  el('restore-no').onclick = () => {
+    banner.style.display = 'none';
+    discardBackup();
+  };
+}).catch(() => {});
