@@ -94,6 +94,59 @@ export function extendLine(line, clickPoint, others) {
     : { x1: nx, y1: ny, x2: line.x2, y2: line.y2 };
 }
 
+// フィレット: 2本の直線の角に半径rの円弧を入れる。
+// click1/click2 は各線分上のクリック位置(残す側の判定に使う)。
+// 戻り値: { l1:{x1..y2}, l2:{...}, arc:{cx,cy,r,startAngle,endAngle} } | null
+export function filletLines(l1, click1, l2, click2, r) {
+  const d1 = { x: l1.x2 - l1.x1, y: l1.y2 - l1.y1 };
+  const d2 = { x: l2.x2 - l2.x1, y: l2.y2 - l2.y1 };
+  const denom = d1.x * d2.y - d1.y * d2.x;
+  if (Math.abs(denom) < 1e-12) return null; // 平行
+  // 無限直線同士の交点P
+  const t = ((l2.x1 - l1.x1) * d2.y - (l2.y1 - l1.y1) * d2.x) / denom;
+  const P = { x: l1.x1 + d1.x * t, y: l1.y1 + d1.y * t };
+  // 各線について、クリック側へ向かう単位ベクトル
+  const unitToward = (d, click) => {
+    const len = Math.hypot(d.x, d.y) || 1;
+    let u = { x: d.x / len, y: d.y / len };
+    if ((click.x - P.x) * u.x + (click.y - P.y) * u.y < 0) u = { x: -u.x, y: -u.y };
+    return u;
+  };
+  const u1 = unitToward(d1, click1);
+  const u2 = unitToward(d2, click2);
+  const cosT = u1.x * u2.x + u1.y * u2.y;
+  const theta = Math.acos(Math.max(-1, Math.min(1, cosT)));
+  if (theta < 1e-6 || Math.PI - theta < 1e-6) return null;
+  const tan2 = Math.tan(theta / 2);
+  const dist = r / tan2; // 接点までの距離
+  const T1 = { x: round6(P.x + u1.x * dist), y: round6(P.y + u1.y * dist) };
+  const T2 = { x: round6(P.x + u2.x * dist), y: round6(P.y + u2.y * dist) };
+  const bis = { x: u1.x + u2.x, y: u1.y + u2.y };
+  const bl = Math.hypot(bis.x, bis.y) || 1;
+  const cDist = r / Math.sin(theta / 2);
+  const C = { x: round6(P.x + (bis.x / bl) * cDist), y: round6(P.y + (bis.y / bl) * cDist) };
+  let a1 = Math.atan2(T1.y - C.y, T1.x - C.x) * 180 / Math.PI;
+  let a2 = Math.atan2(T2.y - C.y, T2.x - C.x) * 180 / Math.PI;
+  let sweep = a2 - a1;
+  while (sweep < 0) sweep += 360;
+  if (sweep > 180) [a1, a2] = [a2, a1]; // 劣弧を採用
+  while (a2 <= a1) a2 += 360;
+
+  // P に近い側の端点を接点に置き換える(必要なら延長にもなる)
+  const replaceNearEnd = (l, T) => {
+    const d1p = Math.hypot(l.x1 - P.x, l.y1 - P.y);
+    const d2p = Math.hypot(l.x2 - P.x, l.y2 - P.y);
+    return d1p <= d2p
+      ? { x1: T.x, y1: T.y, x2: l.x2, y2: l.y2 }
+      : { x1: l.x1, y1: l.y1, x2: T.x, y2: T.y };
+  };
+  return {
+    l1: replaceNearEnd(l1, T1),
+    l2: replaceNearEnd(l2, T2),
+    arc: { cx: C.x, cy: C.y, r, startAngle: round6(a1), endAngle: round6(a2) },
+  };
+}
+
 // 平行複製。sidePoint 側に distance だけずらした複製のプロパティを返す
 export function offsetEntity(e, dist, sidePoint) {
   if (dist <= 0) return null;

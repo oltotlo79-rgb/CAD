@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { trimLine, extendLine, offsetEntity } from '../src/editOps.js';
+import { trimLine, extendLine, offsetEntity, filletLines } from '../src/editOps.js';
 
 const hline = { type: 'line', layer: 'outline', lineType: 'solid', x1: 0, y1: 0, x2: 100, y2: 0 };
 const cutterAt = (x) => ({ type: 'line', x1: x, y1: -10, x2: x, y2: 10 });
@@ -40,6 +40,31 @@ test('extendLine: クリックした側の端点が最寄りの要素まで伸�
 test('extendLine: 延長方向に何もなければ null', () => {
   const target = { ...hline, x2: 50, y2: 0 };
   assert.equal(extendLine(target, { x: 45, y: 0 }, [cutterAt(-30)]), null);
+});
+
+test('filletLines: 直角の角にR5の円弧が入り、両線が接点まで縮む', () => {
+  const l1 = { x1: 0, y1: 0, x2: 20, y2: 0 };
+  const l2 = { x1: 0, y1: 0, x2: 0, y2: 20 };
+  const f = filletLines(l1, { x: 10, y: 0 }, l2, { x: 0, y: 10 }, 5);
+  assert.deepEqual(f.l1, { x1: 5, y1: 0, x2: 20, y2: 0 });
+  assert.deepEqual(f.l2, { x1: 0, y1: 5, x2: 0, y2: 20 });
+  assert.deepEqual([f.arc.cx, f.arc.cy, f.arc.r], [5, 5, 5]);
+  const sweep = f.arc.endAngle - f.arc.startAngle;
+  assert.ok(Math.abs(sweep - 90) < 1e-6);
+});
+
+test('filletLines: 交差しない位置の線も延長してフィレットされる', () => {
+  const l1 = { x1: 10, y1: 0, x2: 30, y2: 0 };   // 交点(0,0)に届かない
+  const l2 = { x1: 0, y1: 10, x2: 0, y2: 30 };
+  const f = filletLines(l1, { x: 20, y: 0 }, l2, { x: 0, y: 20 }, 5);
+  assert.deepEqual([f.l1.x1, f.l1.y1], [5, 0]); // 接点まで延長
+  assert.deepEqual([f.l2.x1, f.l2.y1], [0, 5]);
+});
+
+test('filletLines: 平行線は null', () => {
+  const l1 = { x1: 0, y1: 0, x2: 10, y2: 0 };
+  const l2 = { x1: 0, y1: 5, x2: 10, y2: 5 };
+  assert.equal(filletLines(l1, { x: 5, y: 0 }, l2, { x: 5, y: 5 }, 2), null);
 });
 
 test('offsetEntity: 直線はクリック側へ平行移動した複製', () => {

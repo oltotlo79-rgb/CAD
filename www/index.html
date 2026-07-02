@@ -24,6 +24,7 @@
     <button class="tool" data-tool="circle">円</button>
     <button class="tool" data-tool="arc">円弧</button>
     <button class="tool" data-tool="ellipse">楕円</button>
+    <button class="tool" data-tool="spline">スプライン</button>
     <button class="tool" data-tool="text">文字</button>
     <button class="tool" data-tool="origin">原点設定</button>
   </div>
@@ -31,8 +32,11 @@
     <button class="tool" data-tool="dim">寸法</button>
     <button class="tool" data-tool="dia">φ</button>
     <button class="tool" data-tool="rad">R</button>
+    <button class="tool" data-tool="angle">角度</button>
     <button class="tool" data-tool="chamfer">C</button>
     <button class="tool" data-tool="leader">引出線</button>
+    <button class="tool" data-tool="roughness">粗さ</button>
+    <button class="tool" data-tool="fcf">公差枠</button>
     <button class="tool" data-tool="hatch">ハッチ</button>
     <button class="tool" data-tool="balloon">バルーン</button>
     <button class="tool" data-tool="bom">部品表</button>
@@ -49,6 +53,8 @@
     <button class="tool" data-tool="extend">延長</button>
     <button class="tool" data-tool="offset">オフセット</button>
     <input id="offset-dist" size="4" value="10" title="オフセット距離(mm)">
+    <button class="tool" data-tool="fillet">フィレット</button>
+    <input id="fillet-r" size="4" value="5" title="フィレット半径(mm)">
   </div>
   <div class="group">
     <label>線種 <select id="line-style">

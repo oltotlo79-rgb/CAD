@@ -26,7 +26,69 @@ export function dimText(e) {
   if (e.dimType === 'dia') return `φ${fmtMm(e.r * 2)}`;
   if (e.dimType === 'rad') return `R${fmtMm(e.r)}`;
   if (e.dimType === 'chamfer') return `C${fmtMm(e.size)}`;
+  if (e.dimType === 'angle') return `${fmtMm(angleSweep(e))}°`;
   return '';
+}
+
+function angleSweep(e) {
+  const v = { x: e.vertex[0], y: e.vertex[1] };
+  const a1 = angleDegOf(v, { x: e.p1[0], y: e.p1[1] });
+  let a2 = angleDegOf(v, { x: e.p2[0], y: e.p2[1] });
+  while (a2 <= a1) a2 += 360;
+  return a2 - a1;
+}
+
+// 表面粗さ記号(チェックマーク形状+値)
+export function roughnessLayout(e, k = 1) {
+  const h = 5 / k; // 記号高さ(用紙5mm)
+  const gap = DIM_GAP_MM / k;
+  const tip = { x: e.x, y: e.y };
+  const leg60 = (deg, len) => ({
+    x: tip.x + len * Math.cos(deg * DEG), y: tip.y + len * Math.sin(deg * DEG),
+  });
+  const left = leg60(120, h);
+  const right = leg60(60, h * 2);
+  return {
+    lines: [[tip, left], [tip, right]],
+    arrows: [],
+    texts: [{
+      x: right.x + gap, y: right.y, content: e.value ?? '', angleDeg: 0, align: 'left',
+    }],
+  };
+}
+
+// 幾何公差の公差記入枠(セルを横に並べた箱)
+export function fcfLayout(e, k = 1) {
+  const rowH = 7 / k;
+  const textH = DIM_TEXT_MM / k;
+  const pad = 1.5 / k;
+  const cells = e.cells ?? [];
+  const widths = cells.map((c) => Math.max(rowH, String(c).length * textH * 0.8 + pad * 2));
+  const lines = [];
+  const texts = [];
+  let x = e.x;
+  const y0 = e.y;
+  const y1 = e.y + rowH;
+  for (let i = 0; i < cells.length; i++) {
+    lines.push([{ x, y: y0 }, { x, y: y1 }]);
+    texts.push({
+      x: x + widths[i] / 2, y: y0 + rowH / 2 - textH * 0.35,
+      content: String(cells[i]), angleDeg: 0, align: 'center',
+    });
+    x += widths[i];
+  }
+  lines.push([{ x, y: y0 }, { x, y: y1 }]);
+  lines.push([{ x: e.x, y: y0 }, { x, y: y0 }]);
+  lines.push([{ x: e.x, y: y1 }, { x, y: y1 }]);
+  return { lines, arrows: [], texts };
+}
+
+// 注記系エンティティの共通レイアウト取得
+export function annotationLayout(e, k = 1) {
+  if (e.type === 'dim' || e.type === 'leader') return dimLayout(e, k);
+  if (e.type === 'roughness') return roughnessLayout(e, k);
+  if (e.type === 'fcf') return fcfLayout(e, k);
+  return null;
 }
 
 export const BALLOON_R_MM = 4; // バルーン円の半径(用紙mm)
@@ -155,6 +217,26 @@ export function dimLayout(e, k = 1) {
       y: tail.y + gap, content: text, angleDeg: 0, align: dx >= 0 ? 'left' : 'right',
     });
     return { lines, arrows, texts };
+  }
+
+  if (e.dimType === 'angle') {
+    const v = { x: e.vertex[0], y: e.vertex[1] };
+    const a1 = angleDegOf(v, { x: e.p1[0], y: e.p1[1] });
+    let a2 = angleDegOf(v, { x: e.p2[0], y: e.p2[1] });
+    while (a2 <= a1) a2 += 360;
+    const r = e.radius;
+    const at = (deg, rr) => ({
+      x: v.x + rr * Math.cos(deg * DEG), y: v.y + rr * Math.sin(deg * DEG),
+    });
+    lines.push([v, at(a1, r + ext)]);
+    lines.push([v, at(a2, r + ext)]);
+    const arcs = [{ c: v, r, startDeg: a1, endDeg: a2 }];
+    arrows.push({ at: at(a1, r), angleDeg: a1 - 90 }); // 弧の接線方向
+    arrows.push({ at: at(a2, r), angleDeg: a2 + 90 });
+    const mid = (a1 + a2) / 2;
+    const tp = at(mid, r + gap + textH * 0.5);
+    texts.push({ x: tp.x, y: tp.y, content: text, angleDeg: 0, align: 'center' });
+    return { lines, arrows, texts, arcs };
   }
 
   if (e.dimType === 'chamfer') {

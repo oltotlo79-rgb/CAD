@@ -2,7 +2,10 @@ import { paperDimensions, frameRect } from './papers.js';
 import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
 import { entitySegments, LINE_STYLES } from './model.js';
-import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout } from './dims.js';
+import {
+  dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout, annotationLayout,
+} from './dims.js';
+import { catmullRomPoints } from './geometry.js';
 import { titleBlockLayout } from './titleBlock.js';
 import { hatchSegments } from './hatch.js';
 import { bomLayout } from './bom.js';
@@ -183,9 +186,17 @@ function strokeEntity(ctx, doc, view, e, k) {
     ctx.textAlign = 'left';
     ctx.fillStyle = ctx.strokeStyle;
     ctx.fillText(e.content, p.x, p.y);
-  } else if (e.type === 'dim' || e.type === 'leader') {
-    const layout = dimLayout(e, k);
+  } else if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
+    const layout = annotationLayout(e, k);
     strokeSegments(ctx, doc, view, layout.lines);
+    if (layout.arcs) {
+      for (const arc of layout.arcs) {
+        const c = realToScreen(arc.c, doc, view);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, arc.r * z, -arc.endDeg * DEG, -arc.startDeg * DEG, false);
+        ctx.stroke();
+      }
+    }
     drawArrows(ctx, doc, view, layout.arrows);
     drawDimTexts(ctx, doc, view, layout.texts);
   } else if (e.type === 'hatch') {
@@ -326,6 +337,16 @@ function drawDraft(ctx, doc, view, draft) {
       const segs = [];
       for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1]]);
       strokeSegments(ctx, doc, view, segs);
+    } else if (draft.kind === 'spline') {
+      const raw = [...draft.points.map((p) => [p.x, p.y]), [draft.current.x, draft.current.y]];
+      const pts = catmullRomPoints(raw, false);
+      const segs = [];
+      for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1]]);
+      strokeSegments(ctx, doc, view, segs);
+    } else if (draft.kind === 'angle') {
+      strokeSegments(ctx, doc, view,
+        draft.p1 ? [[draft.vertex, draft.p1], [draft.vertex, draft.current]]
+          : [[draft.vertex, draft.current]]);
     } else if (draft.kind === 'circle') {
       const k = scaleK(doc.scale);
       const c = realToScreen(draft.center, doc, view);

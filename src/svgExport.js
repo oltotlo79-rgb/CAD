@@ -2,7 +2,10 @@
 // 印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
 import { paperDimensions, frameRect } from './papers.js';
 import { LINE_STYLES, entitySegments } from './model.js';
-import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout } from './dims.js';
+import {
+  dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout, annotationLayout,
+} from './dims.js';
+import { catmullRomPoints } from './geometry.js';
 import { hatchSegments } from './hatch.js';
 import { bomLayout } from './bom.js';
 import { scaleK } from './viewTransform.js';
@@ -123,17 +126,30 @@ function entityToSVG(e, doc, k, X, Y) {
     }
     return parts.join('\n');
   }
-  if (e.type === 'dim' || e.type === 'leader') {
-    return svgDimParts(dimLayout(e, k), k, X, Y);
+  if (e.type === 'spline') {
+    const pts = catmullRomPoints(e.points, e.closed)
+      .map((p) => `${X(p.x)},${Y(p.y)}`).join(' ');
+    return `<polyline points="${pts}" ${strokeAttrs(e)}/>`;
+  }
+  if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
+    return svgDimParts(annotationLayout(e, k), k, X, Y);
   }
   return '';
 }
 
-// 寸法・引出線・バルーンで共通の 線+矢印+文字 のSVG化
+// 寸法・引出線・バルーンで共通の 線+円弧+矢印+文字 のSVG化
 function svgDimParts(layout, k, X, Y) {
   const parts = [];
   for (const [a, b] of layout.lines) {
     parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.25" fill="none"/>`);
+  }
+  for (const arc of layout.arcs ?? []) {
+    const sx = X(arc.c.x + arc.r * Math.cos(arc.startDeg * DEG));
+    const sy = Y(arc.c.y + arc.r * Math.sin(arc.startDeg * DEG));
+    const ex = X(arc.c.x + arc.r * Math.cos(arc.endDeg * DEG));
+    const ey = Y(arc.c.y + arc.r * Math.sin(arc.endDeg * DEG));
+    const large = arc.endDeg - arc.startDeg > 180 ? 1 : 0;
+    parts.push(`<path d="M ${sx} ${sy} A ${r2(arc.r * k)} ${r2(arc.r * k)} 0 ${large} 0 ${ex} ${ey}" stroke="black" stroke-width="0.25" fill="none"/>`);
   }
   for (const a of layout.arrows) {
     const tipX = X(a.at.x);

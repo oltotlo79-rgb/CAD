@@ -88,6 +88,38 @@ export function rayCircleIntersections(origin, dir, c, r) {
   return [(-B - disc) / (2 * A), (-B + disc) / (2 * A)].filter((t) => t > 1e-9);
 }
 
+// Catmull-Romスプラインの標本点列(制御点を通る滑らかな曲線)
+export function catmullRomPoints(points, closed, samples = 12) {
+  const pts = points.map(([x, y]) => ({ x, y }));
+  if (pts.length < 3) return pts;
+  const get = (i) => (closed
+    ? pts[((i % pts.length) + pts.length) % pts.length]
+    : pts[Math.max(0, Math.min(pts.length - 1, i))]);
+  const out = [];
+  const segCount = closed ? pts.length : pts.length - 1;
+  for (let i = 0; i < segCount; i++) {
+    const p0 = get(i - 1);
+    const p1 = get(i);
+    const p2 = get(i + 1);
+    const p3 = get(i + 2);
+    for (let j = 0; j < samples; j++) {
+      const t = j / samples;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      out.push({
+        x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t
+          + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2
+          + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+        y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t
+          + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2
+          + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+      });
+    }
+  }
+  out.push(closed ? { ...out[0] } : { ...pts[pts.length - 1] });
+  return out;
+}
+
 export function distancePointToSegment(p, a, b) {
   const abx = b.x - a.x, aby = b.y - a.y;
   const len2 = abx * abx + aby * aby;
