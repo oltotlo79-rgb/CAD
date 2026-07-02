@@ -2,8 +2,10 @@ import { paperDimensions, frameRect } from './papers.js';
 import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
 import { entitySegments, LINE_STYLES } from './model.js';
-import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM } from './dims.js';
+import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout } from './dims.js';
 import { titleBlockLayout } from './titleBlock.js';
+import { hatchSegments } from './hatch.js';
+import { bomLayout } from './bom.js';
 
 const DEG = Math.PI / 180;
 
@@ -186,6 +188,27 @@ function strokeEntity(ctx, doc, view, e, k) {
     strokeSegments(ctx, doc, view, layout.lines);
     drawArrows(ctx, doc, view, layout.arrows);
     drawDimTexts(ctx, doc, view, layout.texts);
+  } else if (e.type === 'hatch') {
+    strokeSegments(ctx, doc, view, hatchSegments(e.boundary, e.angleDeg, e.spacingMm / k));
+  } else if (e.type === 'balloon') {
+    const layout = balloonLayout(e, k);
+    const c = realToScreen(layout.circle.c, doc, view);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, layout.circle.r * k * view.pxPerMm, 0, Math.PI * 2);
+    ctx.stroke();
+    strokeSegments(ctx, doc, view, layout.lines);
+    drawArrows(ctx, doc, view, layout.arrows);
+    drawDimTexts(ctx, doc, view, layout.texts);
+  } else if (e.type === 'bom') {
+    const layout = bomLayout(e, k);
+    strokeSegments(ctx, doc, view, [...layout.hLines, ...layout.vLines]);
+    const pad = 1.5 / k;
+    const texts = [...layout.headers, ...layout.cells].map((cell) => ({
+      x: cell.rect.x + pad,
+      y: cell.rect.y + cell.rect.height / 2 - (DIM_TEXT_MM / k) * 0.35,
+      content: cell.text, angleDeg: 0, align: 'left',
+    }));
+    drawDimTexts(ctx, doc, view, texts);
   } else {
     strokeSegments(ctx, doc, view, entitySegments(e));
   }
