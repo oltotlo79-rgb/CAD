@@ -135,16 +135,40 @@ function render() {
 
 // 単一選択された直線/円/円弧のプロパティを数値パネルへ反映(§7)
 let lastPanelKey = null;
+const PANEL_EDITABLE = ['line', 'circle', 'arc', 'rect', 'ellipse', 'polyline', 'spline', 'text'];
 function selectedEditable() {
   if (state.selection.size !== 1) return null;
   const sel = state.doc.entities.find((e) => state.selection.has(e.id));
-  return sel && (sel.type === 'line' || sel.type === 'circle' || sel.type === 'arc') ? sel : null;
+  return sel && PANEL_EDITABLE.includes(sel.type) ? sel : null;
 }
+// 選択種別ごとの欄の意味: [Xラベル, 長さ欄ラベル(null=無効), 角度欄ラベル(null=無効), 終了角の有無]
+const PANEL_MODES = {
+  line: ['始点X', '長さ', '角度', false],
+  circle: ['中心X', '半径', null, false],
+  arc: ['中心X', '半径', '開始角', true],
+  rect: ['左下X', '幅', '高さ', false],
+  ellipse: ['中心X', '半径X', '半径Y', false],
+  polyline: ['始点X', null, null, false],
+  spline: ['始点X', null, null, false],
+  text: ['位置X', null, null, false],
+};
 function setPanelLabels(mode) {
-  el('lbl-x').textContent = mode === 'circle' || mode === 'arc' ? '中心X' : '始点X';
-  el('lbl-len').textContent = mode === 'circle' || mode === 'arc' ? '半径' : '長さ';
-  el('lbl-ang').textContent = mode === 'arc' ? '開始角' : '角度';
-  el('num-ang2-wrap').style.display = mode === 'arc' ? '' : 'none';
+  const [lx, llen, lang, ang2] = PANEL_MODES[mode] ?? PANEL_MODES.line;
+  el('lbl-x').textContent = lx;
+  el('lbl-len').textContent = llen ?? '長さ';
+  el('lbl-ang').textContent = lang ?? '角度';
+  el('num-len').disabled = llen === null;
+  el('num-ang').disabled = lang === null;
+  el('num-ang2-wrap').style.display = ang2 ? '' : 'none';
+}
+function panelBasePoint(sel) {
+  if (sel.type === 'line') return { x: sel.x1, y: sel.y1 };
+  if (sel.type === 'rect') return { x: sel.x, y: sel.y };
+  if (sel.type === 'text') return { x: sel.x, y: sel.y };
+  if (sel.type === 'polyline' || sel.type === 'spline') {
+    return { x: sel.points[0][0], y: sel.points[0][1] };
+  }
+  return { x: sel.cx, y: sel.cy }; // circle / arc / ellipse
 }
 function syncNumPanel() {
   const sel = selectedEditable();
@@ -152,22 +176,29 @@ function syncNumPanel() {
   if (key === lastPanelKey) return;
   lastPanelKey = key;
   el('num-draw').textContent = sel ? '更新' : '作図';
-  setPanelLabels(sel?.type);
+  setPanelLabels(sel?.type ?? 'line');
   if (!sel) return;
   const o = state.doc.userOrigin;
+  const base = panelBasePoint(sel);
+  el('num-x').value = (base.x - o.x).toFixed(2);
+  el('num-y').value = (base.y - o.y).toFixed(2);
   if (sel.type === 'line') {
-    const a = { x: sel.x1, y: sel.y1 };
     const b = { x: sel.x2, y: sel.y2 };
-    el('num-x').value = (a.x - o.x).toFixed(2);
-    el('num-y').value = (a.y - o.y).toFixed(2);
-    el('num-len').value = geo.distance(a, b).toFixed(2);
-    el('num-ang').value = geo.angleDegOf(a, b).toFixed(1);
-  } else {
-    el('num-x').value = (sel.cx - o.x).toFixed(2);
-    el('num-y').value = (sel.cy - o.y).toFixed(2);
+    el('num-len').value = geo.distance(base, b).toFixed(2);
+    el('num-ang').value = geo.angleDegOf(base, b).toFixed(1);
+  } else if (sel.type === 'rect') {
+    el('num-len').value = sel.width.toFixed(2);
+    el('num-ang').value = sel.height.toFixed(2);
+  } else if (sel.type === 'ellipse') {
+    el('num-len').value = sel.rx.toFixed(2);
+    el('num-ang').value = sel.ry.toFixed(2);
+  } else if (sel.type === 'circle' || sel.type === 'arc') {
     el('num-len').value = sel.r.toFixed(2);
-    el('num-ang').value = sel.type === 'arc' ? sel.startAngle.toFixed(1) : '0';
+    el('num-ang').value = sel.type === 'arc' ? sel.startAngle.toFixed(1) : '';
     if (sel.type === 'arc') el('num-ang2').value = sel.endAngle.toFixed(1);
+  } else { // polyline / spline / text: 位置のみ
+    el('num-len').value = '';
+    el('num-ang').value = '';
   }
 }
 function updateStatus() {
@@ -913,19 +944,40 @@ function applyNumPanel() {
   const y = Number(el('num-y').value);
   const len = Number(el('num-len').value);
   const ang = Number(el('num-ang').value);
-  if (![x, y, len].every(Number.isFinite) || !Number.isFinite(ang) || len <= 0) return;
+  if (![x, y].every(Number.isFinite)) return;
   const p = originToAbs({ x, y });
   lastPanelKey = null; // 更新後の正規化値で再同期させる
+
   if (sel.type === 'line') {
     // 始点基準: 始点=入力座標、終点=長さ・角度から算出
+    if (!Number.isFinite(len) || len <= 0 || !Number.isFinite(ang)) return;
     const end = geo.lineEndPoint(p, len, ang);
     commit(() => {
       sel.x1 = p.x; sel.y1 = p.y; sel.x2 = end.x; sel.y2 = end.y;
     });
-  } else {
-    // 円弧は 開始角+終了角 を直接指定できる(終了角は開始角より大きい向きに正規化)
+  } else if (sel.type === 'rect') {
+    if (!(len > 0) || !(ang > 0)) return; // 幅・高さ
+    commit(() => {
+      sel.x = p.x; sel.y = p.y; sel.width = len; sel.height = ang;
+    });
+  } else if (sel.type === 'ellipse') {
+    if (!(len > 0) || !(ang > 0)) return; // 半径X・半径Y
+    commit(() => {
+      sel.cx = p.x; sel.cy = p.y; sel.rx = len; sel.ry = ang;
+    });
+  } else if (sel.type === 'polyline' || sel.type === 'spline') {
+    // 始点座標の指定で全体を平行移動(形状は維持)
+    const dx = p.x - sel.points[0][0];
+    const dy = p.y - sel.points[0][1];
+    if (dx === 0 && dy === 0) return;
+    commit(() => translateEntities(state.doc, [sel.id], dx, dy));
+  } else if (sel.type === 'text') {
+    commit(() => { sel.x = p.x; sel.y = p.y; });
+  } else if (sel.type === 'circle' || sel.type === 'arc') {
+    if (!(len > 0)) return;
     let end = null;
     if (sel.type === 'arc') {
+      if (!Number.isFinite(ang)) return;
       end = Number(el('num-ang2').value);
       if (!Number.isFinite(end)) return;
       while (end <= ang) end += 360;
