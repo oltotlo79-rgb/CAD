@@ -2,8 +2,10 @@ import { FRAME_MARGIN_MM } from './papers.js';
 import {
   distance, angleDegOf, distancePointToSegment, rotate90Point,
 } from './geometry.js';
-import { dimLayout, DIM_TEXT_MM } from './dims.js';
+import { dimLayout, DIM_TEXT_MM, balloonLayout, BALLOON_R_MM } from './dims.js';
 import { DEFAULT_TITLE_FIELDS } from './titleBlock.js';
+import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
+import { bomLayout } from './bom.js';
 
 // 線種ごとの描画スタイル。太さ・破線は用紙上mm(縮尺に依存しない)
 export const LINE_STYLES = {
@@ -89,6 +91,13 @@ export function translateEntities(doc, ids, dx, dy) {
       }
     } else if (e.type === 'leader') {
       e.points = e.points.map(([x, y]) => [x + dx, y + dy]);
+    } else if (e.type === 'hatch') {
+      translateBoundary(e.boundary, dx, dy);
+    } else if (e.type === 'balloon') {
+      e.at = [e.at[0] + dx, e.at[1] + dy];
+      e.pos = [e.pos[0] + dx, e.pos[1] + dy];
+    } else if (e.type === 'bom') {
+      e.x += dx; e.y += dy;
     }
   }
 }
@@ -125,6 +134,31 @@ export function rotate90Entities(doc, ids, center) {
     } else if (e.type === 'text') {
       const p = rotate90Point({ x: e.x, y: e.y }, center);
       e.x = p.x; e.y = p.y;
+    } else if (e.type === 'balloon') {
+      const a = rotate90Point({ x: e.at[0], y: e.at[1] }, center);
+      const q = rotate90Point({ x: e.pos[0], y: e.pos[1] }, center);
+      e.at = [a.x, a.y];
+      e.pos = [q.x, q.y];
+    } else if (e.type === 'hatch') {
+      const b = e.boundary;
+      if (b.kind === 'rect') {
+        const c = rotate90Point({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, center);
+        const w = b.height, h = b.width;
+        b.x = c.x - w / 2; b.y = c.y - h / 2; b.width = w; b.height = h;
+      } else if (b.kind === 'circle' || b.kind === 'ellipse') {
+        const c = rotate90Point({ x: b.cx, y: b.cy }, center);
+        b.cx = c.x; b.cy = c.y;
+        if (b.kind === 'ellipse') { const rx = b.ry; b.ry = b.rx; b.rx = rx; }
+      } else if (b.kind === 'polyline') {
+        b.points = b.points.map(([x, y]) => {
+          const p = rotate90Point({ x, y }, center);
+          return [p.x, p.y];
+        });
+      }
+      e.angleDeg = (e.angleDeg + 90) % 180;
+    } else if (e.type === 'bom') {
+      const p = rotate90Point({ x: e.x, y: e.y }, center);
+      e.x = p.x; e.y = p.y; // 表自体は軸平行のまま
     }
   }
 }
@@ -209,6 +243,23 @@ export function mirrorEntities(doc, ids, axis, center) {
       }
     } else if (e.type === 'leader') {
       e.points = e.points.map(([x, y]) => mp(x, y));
+    } else if (e.type === 'balloon') {
+      e.at = mp(e.at[0], e.at[1]);
+      e.pos = mp(e.pos[0], e.pos[1]);
+    } else if (e.type === 'hatch') {
+      const b = e.boundary;
+      if (b.kind === 'rect') {
+        const [nx, ny] = mp(b.x, b.y);
+        b.x = axis === 'x' ? nx - b.width : nx;
+        b.y = axis === 'y' ? ny - b.height : ny;
+      } else if (b.kind === 'circle' || b.kind === 'ellipse') {
+        [b.cx, b.cy] = mp(b.cx, b.cy);
+      } else if (b.kind === 'polyline') {
+        b.points = b.points.map(([x, y]) => mp(x, y));
+      }
+      e.angleDeg = (180 - e.angleDeg) % 180;
+    } else if (e.type === 'bom') {
+      [e.x, e.y] = mp(e.x, e.y);
     }
   }
 }
@@ -252,6 +303,18 @@ export function entitySnapPoints(e) {
 
 // 実寸mmでのバウンディングボックス。kは縮尺係数(文字高さは用紙mmのため)
 export function entityBounds(e, k = 1) {
+  if (e.type === 'hatch') return boundaryBBox(e.boundary);
+  if (e.type === 'balloon') {
+    const r = BALLOON_R_MM / k;
+    return {
+      minX: Math.min(e.pos[0] - r, e.at[0]), minY: Math.min(e.pos[1] - r, e.at[1]),
+      maxX: Math.max(e.pos[0] + r, e.at[0]), maxY: Math.max(e.pos[1] + r, e.at[1]),
+    };
+  }
+  if (e.type === 'bom') {
+    const rect = bomLayout(e, k).rect;
+    return { minX: rect.x, minY: rect.y, maxX: rect.x + rect.width, maxY: rect.y + rect.height };
+  }
   if (e.type === 'dim' || e.type === 'leader') {
     const pts = dimLayout(e, k).lines.flat();
     const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -283,6 +346,22 @@ export function entityBounds(e, k = 1) {
 
 // 点pが要素の線上(tolMm以内)にあるか
 export function hitTestEntity(e, p, tolMm, k = 1) {
+  if (e.type === 'hatch') {
+    return pointInBoundary(e.boundary, p);
+  }
+  if (e.type === 'balloon') {
+    const layout = balloonLayout(e, k);
+    if (distance(p, layout.circle.c) <= layout.circle.r + tolMm) return true;
+    for (const [a, b] of layout.lines) {
+      if (distancePointToSegment(p, a, b) <= tolMm) return true;
+    }
+    return false;
+  }
+  if (e.type === 'bom') {
+    const b = entityBounds(e, k);
+    return p.x >= b.minX - tolMm && p.x <= b.maxX + tolMm &&
+           p.y >= b.minY - tolMm && p.y <= b.maxY + tolMm;
+  }
   if (e.type === 'dim' || e.type === 'leader') {
     const layout = dimLayout(e, k);
     for (const [a, b] of layout.lines) {

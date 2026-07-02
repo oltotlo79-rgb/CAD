@@ -12,6 +12,8 @@ import { dimText } from './dims.js';
 import { projectionGuides, guideSnapCandidates } from './guides.js';
 import { toSVG } from './svgExport.js';
 import { titleBlockLayout } from './titleBlock.js';
+import { boundaryFromEntity } from './hatch.js';
+import { bomLayout, bomRowsFromBalloons } from './bom.js';
 import { trimLine, extendLine, offsetEntity } from './editOps.js';
 import { mirrorEntities } from './model.js';
 import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
@@ -251,10 +253,23 @@ canvas.addEventListener('dblclick', (ev) => {
   if (state.tool === 'select') {
     const s = eventScreen(ev);
     const hit = hitTestScreen(s);
-    if (hit && (hit.type === 'dim' || hit.type === 'leader' || hit.type === 'text')) {
+    if (hit && (hit.type === 'dim' || hit.type === 'leader' || hit.type === 'text' || hit.type === 'balloon')) {
       ev.preventDefault();
-      const initial = hit.type === 'dim' ? dimText(hit) : hit.content;
+      const initial = hit.type === 'dim' ? dimText(hit)
+        : hit.type === 'balloon' ? String(hit.number) : hit.content;
       openTextEntry(s, 'edit', { id: hit.id }, initial);
+      return;
+    }
+    if (hit && hit.type === 'bom') {
+      const real = screenToReal(s);
+      const layout = bomLayout(hit, vt.scaleK(state.doc.scale));
+      const cell = layout.cells.find((cl) =>
+        real.x >= cl.rect.x && real.x <= cl.rect.x + cl.rect.width &&
+        real.y >= cl.rect.y && real.y <= cl.rect.y + cl.rect.height);
+      if (cell) {
+        ev.preventDefault();
+        openTextEntry(s, 'bomcell', { id: hit.id, rowIndex: cell.rowIndex, field: cell.field }, cell.text);
+      }
       return;
     }
     // 表題欄のフィールド編集(bind項目は自動反映のため編集不可)
@@ -463,6 +478,38 @@ function handleToolPointerDown(s, ev) {
       openTextEntry(s, 'leader', { from: d.from, elbow: p });
     }
     render();
+  } else if (state.tool === 'hatch') {
+    const hit = hitTestScreen(s);
+    if (hit) {
+      const boundary = boundaryFromEntity(hit);
+      if (boundary) {
+        commit(() => addEntity(state.doc, {
+          type: 'hatch', boundary, angleDeg: 45, spacingMm: 3,
+          layer: 'outline', lineType: 'thin',
+        }));
+      }
+    }
+  } else if (state.tool === 'balloon') {
+    if (!state.draft) {
+      state.draft = { kind: 'leaderDraft', from: p, current: p };
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const next = state.doc.entities
+        .filter((en) => en.type === 'balloon')
+        .reduce((m, en) => Math.max(m, Number(en.number) || 0), 0) + 1;
+      commit(() => addEntity(state.doc, {
+        type: 'balloon', number: next, at: [d.from.x, d.from.y], pos: [p.x, p.y],
+        layer: 'note', lineType: 'thin',
+      }));
+    }
+    render();
+  } else if (state.tool === 'bom') {
+    commit(() => addEntity(state.doc, {
+      type: 'bom', x: p.x, y: p.y, rows: bomRowsFromBalloons(state.doc.entities),
+      layer: 'note', lineType: 'thin',
+    }));
+    setTool('select');
   } else if (state.tool === 'trim') {
     const hit = hitTestScreen(s);
     if (hit && hit.type === 'line') {
@@ -687,11 +734,17 @@ textEntry.addEventListener('keydown', (ev) => {
     state.doc.titleBlock.fields[ctx2.index].value = value;
     markDirty();
     render();
+  } else if (mode === 'bomcell' && ctx2) {
+    const target = state.doc.entities.find((en) => en.id === ctx2.id);
+    if (target) {
+      commit(() => { target.rows[ctx2.rowIndex][ctx2.field] = value; });
+    }
   } else if (mode === 'edit' && ctx2) {
     const target = state.doc.entities.find((en) => en.id === ctx2.id);
     if (target) {
       commit(() => {
         if (target.type === 'dim') target.override = value || null;
+        else if (target.type === 'balloon') target.number = value || target.number;
         else if (value) target.content = value;
       });
     }

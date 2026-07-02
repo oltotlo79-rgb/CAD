@@ -2,7 +2,9 @@
 // 印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
 import { paperDimensions, frameRect } from './papers.js';
 import { LINE_STYLES, entitySegments } from './model.js';
-import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM } from './dims.js';
+import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout } from './dims.js';
+import { hatchSegments } from './hatch.js';
+import { bomLayout } from './bom.js';
 import { scaleK } from './viewTransform.js';
 import { titleBlockLayout } from './titleBlock.js';
 
@@ -95,30 +97,60 @@ function entityToSVG(e, doc, k, X, Y) {
   if (e.type === 'text') {
     return `<text x="${X(e.x)}" y="${Y(e.y)}" font-size="${e.height}" fill="black">${esc(e.content)}</text>`;
   }
-  if (e.type === 'dim' || e.type === 'leader') {
-    const layout = dimLayout(e, k);
+  if (e.type === 'hatch') {
+    return hatchSegments(e.boundary, e.angleDeg, e.spacingMm / k)
+      .map(([a, b]) => `<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.25" fill="none"/>`)
+      .join('\n');
+  }
+  if (e.type === 'balloon') {
+    const layout = balloonLayout(e, k);
     const parts = [];
-    for (const [a, b] of layout.lines) {
-      parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.25" fill="none"/>`);
+    parts.push(`<circle cx="${X(layout.circle.c.x)}" cy="${Y(layout.circle.c.y)}" r="${r2(layout.circle.r * k)}" stroke="black" stroke-width="0.25" fill="none"/>`);
+    parts.push(svgDimParts(layout, k, X, Y));
+    return parts.join('\n');
+  }
+  if (e.type === 'bom') {
+    const layout = bomLayout(e, k);
+    const parts = [];
+    for (const [a, b] of [...layout.hLines, ...layout.vLines]) {
+      parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.35" fill="none"/>`);
     }
-    for (const a of layout.arrows) {
-      const tipX = X(a.at.x);
-      const tipY = Y(a.at.y);
-      const ang = -a.angleDeg * DEG;
-      const L = DIM_ARROW_MM;
-      const W = L / 3;
-      const bx = tipX - L * Math.cos(ang);
-      const by = tipY - L * Math.sin(ang);
-      const px = -Math.sin(ang);
-      const py = Math.cos(ang);
-      parts.push(`<polygon points="${r2(tipX)},${r2(tipY)} ${r2(bx + px * W / 2)},${r2(by + py * W / 2)} ${r2(bx - px * W / 2)},${r2(by - py * W / 2)}" fill="black"/>`);
-    }
-    for (const t of layout.texts) {
-      const anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
-      const rot = t.angleDeg ? ` transform="rotate(${r2(-t.angleDeg)} ${X(t.x)} ${Y(t.y)})"` : '';
-      parts.push(`<text x="${X(t.x)}" y="${Y(t.y)}" font-size="${DIM_TEXT_MM}" text-anchor="${anchor}" fill="black"${rot}>${esc(t.content)}</text>`);
+    const pad = 1.5 / k;
+    for (const cell of [...layout.headers, ...layout.cells]) {
+      const tx = cell.rect.x + pad;
+      const ty = cell.rect.y + cell.rect.height / 2 - (DIM_TEXT_MM / k) * 0.35;
+      parts.push(`<text x="${X(tx)}" y="${Y(ty)}" font-size="${DIM_TEXT_MM}" fill="black">${esc(cell.text)}</text>`);
     }
     return parts.join('\n');
   }
+  if (e.type === 'dim' || e.type === 'leader') {
+    return svgDimParts(dimLayout(e, k), k, X, Y);
+  }
   return '';
+}
+
+// 寸法・引出線・バルーンで共通の 線+矢印+文字 のSVG化
+function svgDimParts(layout, k, X, Y) {
+  const parts = [];
+  for (const [a, b] of layout.lines) {
+    parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.25" fill="none"/>`);
+  }
+  for (const a of layout.arrows) {
+    const tipX = X(a.at.x);
+    const tipY = Y(a.at.y);
+    const ang = -a.angleDeg * DEG;
+    const L = DIM_ARROW_MM;
+    const W = L / 3;
+    const bx = tipX - L * Math.cos(ang);
+    const by = tipY - L * Math.sin(ang);
+    const px = -Math.sin(ang);
+    const py = Math.cos(ang);
+    parts.push(`<polygon points="${r2(tipX)},${r2(tipY)} ${r2(bx + px * W / 2)},${r2(by + py * W / 2)} ${r2(bx - px * W / 2)},${r2(by - py * W / 2)}" fill="black"/>`);
+  }
+  for (const t of layout.texts) {
+    const anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
+    const rot = t.angleDeg ? ` transform="rotate(${r2(-t.angleDeg)} ${X(t.x)} ${Y(t.y)})"` : '';
+    parts.push(`<text x="${X(t.x)}" y="${Y(t.y)}" font-size="${DIM_TEXT_MM}" text-anchor="${anchor}" fill="black"${rot}>${esc(t.content)}</text>`);
+  }
+  return parts.join('\n');
 }

@@ -29,6 +29,30 @@ export function dimText(e) {
   return '';
 }
 
+export const BALLOON_R_MM = 4; // バルーン円の半径(用紙mm)
+
+// バルーン(部品番号)のレイアウト。円+番号+対象への引出線
+export function balloonLayout(e, k = 1) {
+  const r = BALLOON_R_MM / k;
+  const textH = DIM_TEXT_MM / k;
+  const at = { x: e.at[0], y: e.at[1] };
+  const pos = { x: e.pos[0], y: e.pos[1] };
+  const d = distance(pos, at) || 1;
+  const edge = {
+    x: pos.x + ((at.x - pos.x) / d) * r,
+    y: pos.y + ((at.y - pos.y) / d) * r,
+  };
+  return {
+    circle: { c: pos, r },
+    lines: d > r ? [[edge, at]] : [],
+    arrows: d > r ? [{ at, angleDeg: angleDegOf(pos, at) }] : [],
+    texts: [{
+      x: pos.x, y: pos.y - textH * 0.35,
+      content: String(e.number), angleDeg: 0, align: 'center',
+    }],
+  };
+}
+
 // 寸法・引出線の構成要素(実寸mm座標)を計算する。
 // k は縮尺係数。文字・矢印・突き出しは用紙mm基準なので実寸へ換算する。
 // 戻り値: { lines: [[a,b],...], arrows: [{at,angleDeg}], texts: [{x,y,content,angleDeg,align}] }
