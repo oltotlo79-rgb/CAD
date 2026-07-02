@@ -39,6 +39,7 @@ export function createDocument({ paperSize = 'A3', orientation = 'landscape' } =
     scale: { ratio: [1, 1] },
     userOrigin: { x: FRAME_MARGIN_MM, y: FRAME_MARGIN_MM },
     grid: { mode: 'auto', manualMm: 1 },
+    mirror45: null, // 45°ミラー線の通過点 {x,y}(実寸mm)。nullなら未設定
     layers: DEFAULT_LAYERS.map((l) => ({ ...l })),
     nextId: 1,
     entities: [],

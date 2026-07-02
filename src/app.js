@@ -9,6 +9,9 @@ import {
 } from './model.js';
 import { findSnap } from './snap.js';
 import { dimText } from './dims.js';
+import { projectionGuides, guideSnapCandidates } from './guides.js';
+import { trimLine, extendLine, offsetEntity } from './editOps.js';
+import { mirrorEntities } from './model.js';
 import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
 import { serialize, deserialize } from './serializer.js';
 import {
@@ -34,6 +37,9 @@ const state = {
   gridSnap: true,
   osnap: true,
   snapHint: null,
+  projGuides: true,
+  show45: true,
+  guides: { xs: [], ys: [] },
   spaceDown: false,
   panDrag: null,   // { startScreen, startPanX, startPanY }
   moveDrag: null,  // { lastReal, snapshotPushed }
@@ -61,16 +67,28 @@ function snapReal(p) {
 function originToAbs(p) {
   return { x: p.x + state.doc.userOrigin.x, y: p.y + state.doc.userOrigin.y };
 }
-// オブジェクトスナップ優先、なければグリッドスナップ
+// 選択要素からの投影ガイド(投影ガイドONのとき)
+function currentGuides() {
+  if (!state.projGuides || state.selection.size === 0) return { xs: [], ys: [] };
+  return projectionGuides(state.doc.entities.filter((e) => state.selection.has(e.id)));
+}
+// オブジェクトスナップ・ガイドスナップ優先、なければグリッドスナップ
 function resolvePoint(s) {
   const raw = screenToReal(s);
+  const tolMm = 10 / pxPerRealMm();
+  const cands = [];
   if (state.osnap) {
-    const tolMm = 10 / pxPerRealMm();
     const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale));
-    if (hit) {
-      state.snapHint = hit;
-      return { x: hit.x, y: hit.y };
-    }
+    if (hit) cands.push(hit);
+  }
+  if (state.projGuides) {
+    const m45 = state.show45 ? state.doc.mirror45 : null;
+    cands.push(...guideSnapCandidates(state.guides, m45, raw, tolMm));
+  }
+  if (cands.length > 0) {
+    cands.sort((a, b) => geo.distance(raw, a) - geo.distance(raw, b));
+    state.snapHint = cands[0];
+    return { x: cands[0].x, y: cands[0].y };
   }
   state.snapHint = null;
   return snapReal(raw);
@@ -102,6 +120,7 @@ function dimPlacement(p1, p2, c, aligned) {
 
 // ---- 描画・状態表示 ----
 function render() {
+  state.guides = currentGuides();
   draw(ctx, state);
   updateStatus();
 }
@@ -426,6 +445,41 @@ function handleToolPointerDown(s, ev) {
       openTextEntry(s, 'leader', { from: d.from, elbow: p });
     }
     render();
+  } else if (state.tool === 'trim') {
+    const hit = hitTestScreen(s);
+    if (hit && hit.type === 'line') {
+      const others = state.doc.entities.filter((en) => en.id !== hit.id);
+      const pieces = trimLine(hit, screenToReal(s), others);
+      if (pieces) {
+        commit(() => {
+          removeEntities(state.doc, [hit.id]);
+          for (const piece of pieces) addEntity(state.doc, piece);
+        });
+      }
+    }
+  } else if (state.tool === 'extend') {
+    const hit = hitTestScreen(s);
+    if (hit && hit.type === 'line') {
+      const others = state.doc.entities.filter((en) => en.id !== hit.id);
+      const next = extendLine(hit, screenToReal(s), others);
+      if (next) {
+        commit(() => Object.assign(hit, next));
+      }
+    }
+  } else if (state.tool === 'offset') {
+    const hit = hitTestScreen(s);
+    if (hit) {
+      const dist = Number(el('offset-dist').value);
+      if (Number.isFinite(dist) && dist > 0) {
+        const props = offsetEntity(hit, dist, screenToReal(s));
+        if (props) commit(() => addEntity(state.doc, props));
+      }
+    }
+  } else if (state.tool === 'mirror45') {
+    state.doc.mirror45 = p;
+    markDirty();
+    setTool('select');
+    render();
   } else if (state.tool === 'origin') {
     commit(() => { state.doc.userOrigin = p; });
     setTool('select');
@@ -548,6 +602,12 @@ function duplicateSelection() {
 }
 function rotateSelection() {
   if (state.selection.size === 0) return;
+  const center = selectionCenter();
+  commit(() => rotate90Entities(state.doc, [...state.selection], center));
+}
+el('rotate').addEventListener('click', rotateSelection);
+
+function selectionCenter() {
   const k = vt.scaleK(state.doc.scale);
   const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const e of state.doc.entities) {
@@ -556,10 +616,15 @@ function rotateSelection() {
     b.minX = Math.min(b.minX, eb.minX); b.minY = Math.min(b.minY, eb.minY);
     b.maxX = Math.max(b.maxX, eb.maxX); b.maxY = Math.max(b.maxY, eb.maxY);
   }
-  const center = snapReal({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
-  commit(() => rotate90Entities(state.doc, [...state.selection], center));
+  return snapReal({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
 }
-el('rotate').addEventListener('click', rotateSelection);
+function mirrorSelection(axis) {
+  if (state.selection.size === 0) return;
+  const center = selectionCenter();
+  commit(() => mirrorEntities(state.doc, [...state.selection], axis, center));
+}
+el('mirror-x').addEventListener('click', () => mirrorSelection('x'));
+el('mirror-y').addEventListener('click', () => mirrorSelection('y'));
 
 // ---- 文字入力オーバーレイ(注記/引出線/寸法値編集で共用) ----
 const textEntry = el('text-entry');
@@ -685,6 +750,40 @@ el('osnap').addEventListener('change', () => {
   state.osnap = el('osnap').checked;
   if (!state.osnap) state.snapHint = null;
 });
+el('proj-guides').addEventListener('change', () => {
+  state.projGuides = el('proj-guides').checked;
+  render();
+});
+el('show45').addEventListener('change', () => {
+  state.show45 = el('show45').checked;
+  render();
+});
+
+// ---- レイヤーパネル ----
+function buildLayerPanel() {
+  const list = el('layer-list');
+  list.innerHTML = '<span class="head">レイヤー</span><span class="head">表示</span><span class="head">印刷</span>';
+  for (const layer of state.doc.layers) {
+    const name = document.createElement('span');
+    name.textContent = layer.name;
+    const vis = document.createElement('input');
+    vis.type = 'checkbox';
+    vis.checked = layer.visible;
+    vis.addEventListener('change', () => {
+      layer.visible = vis.checked;
+      markDirty();
+      render();
+    });
+    const pr = document.createElement('input');
+    pr.type = 'checkbox';
+    pr.checked = layer.printable;
+    pr.addEventListener('change', () => {
+      layer.printable = pr.checked;
+      markDirty();
+    });
+    list.append(name, vis, pr);
+  }
+}
 
 // ---- ファイル操作 ----
 function confirmDiscard() {
@@ -702,6 +801,7 @@ function loadDocText(text, name) {
     state.dirty = false;
     discardBackup();
     syncSettingsUI();
+    buildLayerPanel();
     refitView();
     updateTitle();
     render();
@@ -734,6 +834,7 @@ el('file-new').addEventListener('click', () => {
   state.fileName = '図面.json';
   state.dirty = false;
   syncSettingsUI();
+  buildLayerPanel();
   refitView();
   updateTitle();
   render();
@@ -807,6 +908,7 @@ window.addEventListener('keyup', (ev) => {
 // ---- 起動 ----
 resizeCanvas();
 syncSettingsUI();
+buildLayerPanel();
 updateTitle();
 
 // クラッシュ後の復元確認(非モーダルのバナーで提示)

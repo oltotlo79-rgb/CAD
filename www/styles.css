@@ -16,6 +16,14 @@ button:hover { background: #4a5058; }
 button.tool.active { background: #0b6bcb; border-color: #0b6bcb; color: #fff; }
 select, input { background: #23262b; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 2px 4px; }
 input:disabled, select:disabled { opacity: 0.4; }
+#layer-panel { position: relative; }
+#layer-panel summary { cursor: pointer; padding: 3px 8px; background: #3a3f46; border: 1px solid #555; border-radius: 3px; list-style: none; }
+#layer-list {
+  position: absolute; right: 0; top: 100%; z-index: 20; min-width: 200px;
+  background: #23262b; border: 1px solid #555; border-radius: 3px; padding: 6px 10px;
+  display: grid; grid-template-columns: auto auto auto; gap: 4px 12px; align-items: center;
+}
+#layer-list .head { color: #889; font-size: 11px; }
 #restore-banner {
   display: none; gap: 10px; align-items: center;
   padding: 6px 10px; background: #6b5300; color: #ffe9a8;
