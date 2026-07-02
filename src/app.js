@@ -14,7 +14,9 @@ import { toSVG } from './svgExport.js';
 import { titleBlockLayout } from './titleBlock.js';
 import { boundaryFromEntity } from './hatch.js';
 import { bomLayout, bomRowsFromBalloons } from './bom.js';
-import { trimLine, extendLine, offsetEntity, filletLines } from './editOps.js';
+import {
+  trimLine, extendLine, offsetEntity, filletLines, chamferLines,
+} from './editOps.js';
 import { mirrorEntities } from './model.js';
 import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
 import { serialize, deserialize } from './serializer.js';
@@ -128,6 +130,37 @@ function render() {
   state.guides = currentGuides();
   draw(ctx, state);
   updateStatus();
+  syncNumPanel();
+}
+
+// 単一選択された直線/円/円弧のプロパティを数値パネルへ反映(§7)
+let lastPanelKey = null;
+function selectedEditable() {
+  if (state.selection.size !== 1) return null;
+  const sel = state.doc.entities.find((e) => state.selection.has(e.id));
+  return sel && (sel.type === 'line' || sel.type === 'circle' || sel.type === 'arc') ? sel : null;
+}
+function syncNumPanel() {
+  const sel = selectedEditable();
+  const key = sel ? `${sel.type}:${sel.id}` : null;
+  if (key === lastPanelKey) return;
+  lastPanelKey = key;
+  el('num-draw').textContent = sel ? '更新' : '作図';
+  if (!sel) return;
+  const o = state.doc.userOrigin;
+  if (sel.type === 'line') {
+    const a = { x: sel.x1, y: sel.y1 };
+    const b = { x: sel.x2, y: sel.y2 };
+    el('num-x').value = (a.x - o.x).toFixed(2);
+    el('num-y').value = (a.y - o.y).toFixed(2);
+    el('num-len').value = geo.distance(a, b).toFixed(2);
+    el('num-ang').value = geo.angleDegOf(a, b).toFixed(1);
+  } else {
+    el('num-x').value = (sel.cx - o.x).toFixed(2);
+    el('num-y').value = (sel.cy - o.y).toFixed(2);
+    el('num-len').value = sel.r.toFixed(2); // 円・円弧は「長さ」欄=半径
+    el('num-ang').value = sel.type === 'arc' ? sel.startAngle.toFixed(1) : '0';
+  }
 }
 function updateStatus() {
   const o = state.doc.userOrigin;
@@ -473,7 +506,7 @@ function handleToolPointerDown(s, ev) {
       }
     }
     render();
-  } else if (state.tool === 'fillet') {
+  } else if (state.tool === 'fillet' || state.tool === 'chamferEdit') {
     const hit = hitTestScreen(s);
     if (hit && hit.type === 'line') {
       if (!state.filletFirst) {
@@ -486,16 +519,25 @@ function handleToolPointerDown(s, ev) {
         state.filletFirst = null;
         state.selection.clear();
         if (Number.isFinite(r) && r > 0) {
-          const f = filletLines(first.line, first.click, hit, screenToReal(s), r);
-          if (f) {
-            commit(() => {
-              Object.assign(first.line, f.l1);
-              Object.assign(hit, f.l2);
-              addEntity(state.doc, {
-                type: 'arc', ...f.arc,
-                layer: first.line.layer, lineType: first.line.lineType,
+          const style = { layer: first.line.layer, lineType: first.line.lineType };
+          if (state.tool === 'fillet') {
+            const f = filletLines(first.line, first.click, hit, screenToReal(s), r);
+            if (f) {
+              commit(() => {
+                Object.assign(first.line, f.l1);
+                Object.assign(hit, f.l2);
+                addEntity(state.doc, { type: 'arc', ...f.arc, ...style });
               });
-            });
+            }
+          } else {
+            const c = chamferLines(first.line, first.click, hit, screenToReal(s), r);
+            if (c) {
+              commit(() => {
+                Object.assign(first.line, c.l1);
+                Object.assign(hit, c.l2);
+                addEntity(state.doc, { type: 'line', ...c.line, ...style });
+              });
+            }
           }
         }
         render();
@@ -547,8 +589,10 @@ function handleToolPointerDown(s, ev) {
     if (hit) {
       const boundary = boundaryFromEntity(hit);
       if (boundary) {
+        const angleDeg = Number(el('hatch-angle').value) || 45;
+        const spacingMm = Math.max(0.5, Number(el('hatch-space').value) || 3);
         commit(() => addEntity(state.doc, {
-          type: 'hatch', boundary, angleDeg: 45, spacingMm: 3,
+          type: 'hatch', boundary, angleDeg, spacingMm,
           layer: 'outline', lineType: 'thin',
         }));
       }
@@ -663,7 +707,7 @@ function handleToolPointerUp() {
 // ---- ポインタイベント ----
 canvas.addEventListener('pointerdown', (ev) => {
   const s = eventScreen(ev);
-  canvas.setPointerCapture(ev.pointerId);
+  try { canvas.setPointerCapture(ev.pointerId); } catch { /* 合成イベント等 */ }
   if (ev.button === 1 || state.spaceDown) {
     startPan(s);
     return;
@@ -827,7 +871,38 @@ function drawLineFromInputs() {
   const start = originToAbs({ x, y });
   commitLine(start, geo.lineEndPoint(start, len, ang));
 }
-el('num-draw').addEventListener('click', drawLineFromInputs);
+// 選択中なら数値でプロパティを更新、未選択なら新規作図
+function applyNumPanel() {
+  const sel = selectedEditable();
+  if (!sel) {
+    drawLineFromInputs();
+    return;
+  }
+  const x = Number(el('num-x').value);
+  const y = Number(el('num-y').value);
+  const len = Number(el('num-len').value);
+  const ang = Number(el('num-ang').value);
+  if (![x, y, len].every(Number.isFinite) || !Number.isFinite(ang) || len <= 0) return;
+  const p = originToAbs({ x, y });
+  lastPanelKey = null; // 更新後の正規化値で再同期させる
+  if (sel.type === 'line') {
+    // 始点基準: 始点=入力座標、終点=長さ・角度から算出
+    const end = geo.lineEndPoint(p, len, ang);
+    commit(() => {
+      sel.x1 = p.x; sel.y1 = p.y; sel.x2 = end.x; sel.y2 = end.y;
+    });
+  } else {
+    commit(() => {
+      sel.cx = p.x; sel.cy = p.y; sel.r = len;
+      if (sel.type === 'arc') {
+        const sweep = sel.endAngle - sel.startAngle;
+        sel.startAngle = ang;
+        sel.endAngle = ang + sweep;
+      }
+    });
+  }
+}
+el('num-draw').addEventListener('click', applyNumPanel);
 
 // 直線ドラフト中に長さ/角度欄でEnter → その数値で確定
 for (const id of ['num-len', 'num-ang']) {
@@ -842,7 +917,7 @@ for (const id of ['num-len', 'num-ang']) {
         render();
       }
     } else {
-      drawLineFromInputs();
+      applyNumPanel();
     }
   });
 }

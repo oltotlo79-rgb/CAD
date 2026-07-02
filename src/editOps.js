@@ -147,6 +147,39 @@ export function filletLines(l1, click1, l2, click2, r) {
   };
 }
 
+// 45°面取り(角の切り落とし): 2本の直線の角から size ずつ入った点同士を直線で結ぶ。
+// 戻り値: { l1, l2, line:{x1..y2} } | null
+export function chamferLines(l1, click1, l2, click2, size) {
+  const d1 = { x: l1.x2 - l1.x1, y: l1.y2 - l1.y1 };
+  const d2 = { x: l2.x2 - l2.x1, y: l2.y2 - l2.y1 };
+  const denom = d1.x * d2.y - d1.y * d2.x;
+  if (Math.abs(denom) < 1e-12) return null;
+  const t = ((l2.x1 - l1.x1) * d2.y - (l2.y1 - l1.y1) * d2.x) / denom;
+  const P = { x: l1.x1 + d1.x * t, y: l1.y1 + d1.y * t };
+  const unitToward = (d, click) => {
+    const len = Math.hypot(d.x, d.y) || 1;
+    let u = { x: d.x / len, y: d.y / len };
+    if ((click.x - P.x) * u.x + (click.y - P.y) * u.y < 0) u = { x: -u.x, y: -u.y };
+    return u;
+  };
+  const u1 = unitToward(d1, click1);
+  const u2 = unitToward(d2, click2);
+  const T1 = { x: round6(P.x + u1.x * size), y: round6(P.y + u1.y * size) };
+  const T2 = { x: round6(P.x + u2.x * size), y: round6(P.y + u2.y * size) };
+  const replaceNearEnd = (l, T) => {
+    const d1p = Math.hypot(l.x1 - P.x, l.y1 - P.y);
+    const d2p = Math.hypot(l.x2 - P.x, l.y2 - P.y);
+    return d1p <= d2p
+      ? { x1: T.x, y1: T.y, x2: l.x2, y2: l.y2 }
+      : { x1: l.x1, y1: l.y1, x2: T.x, y2: T.y };
+  };
+  return {
+    l1: replaceNearEnd(l1, T1),
+    l2: replaceNearEnd(l2, T2),
+    line: { x1: T1.x, y1: T1.y, x2: T2.x, y2: T2.y },
+  };
+}
+
 // 平行複製。sidePoint 側に distance だけずらした複製のプロパティを返す
 export function offsetEntity(e, dist, sidePoint) {
   if (dist <= 0) return null;
