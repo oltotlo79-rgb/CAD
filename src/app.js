@@ -221,10 +221,11 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 // ---- パン・ズーム ----
-// 通常スクロール=パン(上下、チルト/トラックパッドで左右)、Shift+スクロール=拡大縮小
+// 通常スクロール=パン(上下、チルト/トラックパッドで左右)、Shift/Ctrl+スクロール=拡大縮小
+// (Ctrl+ホイールはトラックパッドのピンチ操作でも発生する)
 canvas.addEventListener('wheel', (ev) => {
   ev.preventDefault();
-  if (ev.shiftKey) {
+  if (ev.shiftKey || ev.ctrlKey) {
     // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
     const dy = ev.deltaY !== 0 ? ev.deltaY : ev.deltaX;
     const factor = dy < 0 ? 1.2 : 1 / 1.2;
