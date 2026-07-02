@@ -140,12 +140,19 @@ function selectedEditable() {
   const sel = state.doc.entities.find((e) => state.selection.has(e.id));
   return sel && (sel.type === 'line' || sel.type === 'circle' || sel.type === 'arc') ? sel : null;
 }
+function setPanelLabels(mode) {
+  el('lbl-x').textContent = mode === 'circle' || mode === 'arc' ? '中心X' : '始点X';
+  el('lbl-len').textContent = mode === 'circle' || mode === 'arc' ? '半径' : '長さ';
+  el('lbl-ang').textContent = mode === 'arc' ? '開始角' : '角度';
+  el('num-ang2-wrap').style.display = mode === 'arc' ? '' : 'none';
+}
 function syncNumPanel() {
   const sel = selectedEditable();
   const key = sel ? `${sel.type}:${sel.id}` : null;
   if (key === lastPanelKey) return;
   lastPanelKey = key;
   el('num-draw').textContent = sel ? '更新' : '作図';
+  setPanelLabels(sel?.type);
   if (!sel) return;
   const o = state.doc.userOrigin;
   if (sel.type === 'line') {
@@ -158,8 +165,9 @@ function syncNumPanel() {
   } else {
     el('num-x').value = (sel.cx - o.x).toFixed(2);
     el('num-y').value = (sel.cy - o.y).toFixed(2);
-    el('num-len').value = sel.r.toFixed(2); // 円・円弧は「長さ」欄=半径
+    el('num-len').value = sel.r.toFixed(2);
     el('num-ang').value = sel.type === 'arc' ? sel.startAngle.toFixed(1) : '0';
+    if (sel.type === 'arc') el('num-ang2').value = sel.endAngle.toFixed(1);
   }
 }
 function updateStatus() {
@@ -915,12 +923,18 @@ function applyNumPanel() {
       sel.x1 = p.x; sel.y1 = p.y; sel.x2 = end.x; sel.y2 = end.y;
     });
   } else {
+    // 円弧は 開始角+終了角 を直接指定できる(終了角は開始角より大きい向きに正規化)
+    let end = null;
+    if (sel.type === 'arc') {
+      end = Number(el('num-ang2').value);
+      if (!Number.isFinite(end)) return;
+      while (end <= ang) end += 360;
+    }
     commit(() => {
       sel.cx = p.x; sel.cy = p.y; sel.r = len;
       if (sel.type === 'arc') {
-        const sweep = sel.endAngle - sel.startAngle;
         sel.startAngle = ang;
-        sel.endAngle = ang + sweep;
+        sel.endAngle = end;
       }
     });
   }
@@ -929,7 +943,7 @@ el('num-draw').addEventListener('click', applyNumPanel);
 
 // どの欄でも Enter で反映。直線ドラフト中はその数値で確定。
 // 選択要素の編集中は、欄からフォーカスが外れた時(change)にも自動反映する。
-for (const id of ['num-x', 'num-y', 'num-len', 'num-ang']) {
+for (const id of ['num-x', 'num-y', 'num-len', 'num-ang', 'num-ang2']) {
   el(id).addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter') return;
     if (state.draft?.kind === 'line') {

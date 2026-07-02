@@ -114,11 +114,12 @@
   <input id="text-entry" placeholder="文字を入力してEnter">
 </main>
 <section id="numpanel">
-  <span>直線の数値入力:</span>
-  <label>始点X <input id="num-x" size="7"></label>
+  <span>数値入力:</span>
+  <label><span id="lbl-x">始点X</span> <input id="num-x" size="7"></label>
   <label>Y <input id="num-y" size="7"></label>
-  <label>長さ <input id="num-len" size="7"></label>
-  <label>角度 <input id="num-ang" size="7" value="0"></label>
+  <label><span id="lbl-len">長さ</span> <input id="num-len" size="7"></label>
+  <label><span id="lbl-ang">角度</span> <input id="num-ang" size="7" value="0"></label>
+  <label id="num-ang2-wrap" style="display:none">終了角 <input id="num-ang2" size="7"></label>
   <button id="num-draw">作図</button>
   <span class="hint">Escで中止 / 連続線はEnterで完了 / 寸法値・表題欄・部品表のセルはダブルクリックで記入</span>
 </section>
