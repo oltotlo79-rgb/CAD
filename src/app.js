@@ -8,6 +8,7 @@ import {
   rotate90Entities, entityBounds, hitTestEntity, STYLE_PRESETS,
 } from './model.js';
 import { findSnap } from './snap.js';
+import { dimText } from './dims.js';
 import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
 import { serialize, deserialize } from './serializer.js';
 import {
@@ -78,6 +79,25 @@ function resolvePoint(s) {
 function styleProps() {
   const preset = STYLE_PRESETS[el('line-style').value] ?? STYLE_PRESETS.outline;
   return { lineType: preset.lineType, layer: preset.layer };
+}
+// 寸法の向きと配置: 2点が水平/垂直なら自動、斜めはカーソル位置で判定(Shiftで平行寸法)
+function dimPlacement(p1, p2, c, aligned) {
+  const eps = 1e-6;
+  let orient;
+  if (Math.abs(p1.y - p2.y) < eps) orient = 'h';
+  else if (Math.abs(p1.x - p2.x) < eps) orient = 'v';
+  else if (aligned) orient = 'aligned';
+  else {
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    orient = Math.abs(c.y - midY) >= Math.abs(c.x - midX) ? 'h' : 'v';
+  }
+  if (orient === 'h') return { orient, offset: c.y };
+  if (orient === 'v') return { orient, offset: c.x };
+  const len = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+  const nx = -(p2.y - p1.y) / len;
+  const ny = (p2.x - p1.x) / len;
+  return { orient, offset: (c.x - p1.x) * nx + (c.y - p1.y) * ny };
 }
 
 // ---- 描画・状態表示 ----
@@ -206,7 +226,19 @@ function finishPolyline() {
     render();
   }
 }
-canvas.addEventListener('dblclick', () => finishPolyline());
+canvas.addEventListener('dblclick', (ev) => {
+  if (state.tool === 'select') {
+    const s = eventScreen(ev);
+    const hit = hitTestScreen(s);
+    if (hit && (hit.type === 'dim' || hit.type === 'leader' || hit.type === 'text')) {
+      ev.preventDefault();
+      const initial = hit.type === 'dim' ? dimText(hit) : hit.content;
+      openTextEntry(s, 'edit', { id: hit.id }, initial);
+      return;
+    }
+  }
+  finishPolyline();
+});
 
 // ---- ヒットテスト・範囲選択 ----
 function hitTestScreen(s) {
@@ -332,7 +364,68 @@ function handleToolPointerDown(s, ev) {
   } else if (state.tool === 'text') {
     // canvasへのフォーカス移動(mousedown既定動作)が入力欄のフォーカスを奪うのを防ぐ
     ev.preventDefault();
-    openTextEntry(s, p);
+    openTextEntry(s, 'text', { pos: p });
+  } else if (state.tool === 'dim') {
+    if (!state.draft) {
+      state.draft = { kind: 'dim', stage: 1, p1: p, current: p };
+    } else if (state.draft.stage === 1) {
+      if (p.x !== state.draft.p1.x || p.y !== state.draft.p1.y) {
+        state.draft.stage = 2;
+        state.draft.p2 = p;
+      }
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const { orient, offset } = dimPlacement(d.p1, d.p2, p, ev.shiftKey);
+      commit(() => addEntity(state.doc, {
+        type: 'dim', dimType: 'linear', orient,
+        p1: [d.p1.x, d.p1.y], p2: [d.p2.x, d.p2.y], offset,
+        override: null, layer: 'dim', lineType: 'thin',
+      }));
+    }
+    render();
+  } else if (state.tool === 'dia' || state.tool === 'rad') {
+    const hit = hitTestScreen(s);
+    if (hit && (hit.type === 'circle' || hit.type === 'arc')) {
+      const real = screenToReal(s);
+      const angleDeg = geo.round6(geo.angleDegOf({ x: hit.cx, y: hit.cy }, real));
+      const dimType = state.tool === 'dia' ? 'dia' : 'rad';
+      commit(() => addEntity(state.doc, {
+        type: 'dim', dimType, cx: hit.cx, cy: hit.cy, r: hit.r, angleDeg,
+        override: null, layer: 'dim', lineType: 'thin',
+      }));
+    }
+  } else if (state.tool === 'chamfer') {
+    if (!state.draft) {
+      const hit = hitTestScreen(s);
+      if (hit && hit.type === 'line') {
+        const size = Math.max(Math.abs(hit.x2 - hit.x1), Math.abs(hit.y2 - hit.y1));
+        state.draft = {
+          kind: 'chamfer',
+          from: { x: (hit.x1 + hit.x2) / 2, y: (hit.y1 + hit.y2) / 2 },
+          seg: { p1: [hit.x1, hit.y1], p2: [hit.x2, hit.y2] },
+          size: geo.round6(size), current: p,
+        };
+      }
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      commit(() => addEntity(state.doc, {
+        type: 'dim', dimType: 'chamfer', p1: d.seg.p1, p2: d.seg.p2,
+        tail: [p.x, p.y], size: d.size, override: null, layer: 'dim', lineType: 'thin',
+      }));
+    }
+    render();
+  } else if (state.tool === 'leader') {
+    if (!state.draft) {
+      state.draft = { kind: 'leaderDraft', from: p, current: p };
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      ev.preventDefault();
+      openTextEntry(s, 'leader', { from: d.from, elbow: p });
+    }
+    render();
   } else if (state.tool === 'origin') {
     commit(() => { state.doc.userOrigin = p; });
     setTool('select');
@@ -364,6 +457,10 @@ function handleToolPointerMove(s) {
     if (state.draft.kind === 'line') {
       el('num-len').value = geo.distance(state.draft.start, p).toFixed(2);
       el('num-ang').value = geo.angleDegOf(state.draft.start, p).toFixed(1);
+    } else if (state.draft.kind === 'dim' && state.draft.stage === 2) {
+      const pl = dimPlacement(state.draft.p1, state.draft.p2, p, false);
+      state.draft.orient = pl.orient;
+      state.draft.offset = pl.offset;
     }
   }
 }
@@ -464,36 +561,53 @@ function rotateSelection() {
 }
 el('rotate').addEventListener('click', rotateSelection);
 
-// ---- 文字入力オーバーレイ ----
+// ---- 文字入力オーバーレイ(注記/引出線/寸法値編集で共用) ----
 const textEntry = el('text-entry');
-let textPos = null; // 実寸mm
-function openTextEntry(s, p) {
-  textPos = p;
+let textEntryMode = 'text';
+let textEntryCtx = null;
+function openTextEntry(s, mode, ctx2, initial = '') {
+  textEntryMode = mode;
+  textEntryCtx = ctx2;
   textEntry.style.left = `${s.x}px`;
   textEntry.style.top = `${s.y}px`;
   textEntry.style.display = 'block';
-  textEntry.value = '';
+  textEntry.value = initial;
   textEntry.focus();
-  setTimeout(() => textEntry.focus(), 0);
+  setTimeout(() => { textEntry.focus(); textEntry.select(); }, 0);
 }
 function closeTextEntry() {
   textEntry.style.display = 'none';
-  textPos = null;
+  textEntryCtx = null;
 }
 textEntry.addEventListener('keydown', (ev) => {
   ev.stopPropagation();
-  if (ev.key === 'Enter') {
-    const content = textEntry.value.trim();
-    if (content && textPos) {
-      const pos = textPos;
-      commit(() => addEntity(state.doc, {
-        type: 'text', x: pos.x, y: pos.y, content, height: 3.5,
-        layer: 'note', lineType: 'thin',
-      }));
+  if (ev.key === 'Escape') {
+    closeTextEntry();
+    return;
+  }
+  if (ev.key !== 'Enter') return;
+  const value = textEntry.value.trim();
+  const ctx2 = textEntryCtx;
+  const mode = textEntryMode;
+  closeTextEntry();
+  if (mode === 'text' && value && ctx2) {
+    commit(() => addEntity(state.doc, {
+      type: 'text', x: ctx2.pos.x, y: ctx2.pos.y, content: value, height: 3.5,
+      layer: 'note', lineType: 'thin',
+    }));
+  } else if (mode === 'leader' && value && ctx2) {
+    commit(() => addEntity(state.doc, {
+      type: 'leader', points: [[ctx2.from.x, ctx2.from.y], [ctx2.elbow.x, ctx2.elbow.y]],
+      content: value, override: null, layer: 'dim', lineType: 'thin',
+    }));
+  } else if (mode === 'edit' && ctx2) {
+    const target = state.doc.entities.find((en) => en.id === ctx2.id);
+    if (target) {
+      commit(() => {
+        if (target.type === 'dim') target.override = value || null;
+        else if (value) target.content = value;
+      });
     }
-    closeTextEntry();
-  } else if (ev.key === 'Escape') {
-    closeTextEntry();
   }
 });
 

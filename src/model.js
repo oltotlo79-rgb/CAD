@@ -2,6 +2,7 @@ import { FRAME_MARGIN_MM } from './papers.js';
 import {
   distance, angleDegOf, distancePointToSegment, rotate90Point,
 } from './geometry.js';
+import { dimLayout, DIM_TEXT_MM } from './dims.js';
 
 // 線種ごとの描画スタイル。太さ・破線は用紙上mm(縮尺に依存しない)
 export const LINE_STYLES = {
@@ -70,6 +71,21 @@ export function translateEntities(doc, ids, dx, dy) {
       e.cx += dx; e.cy += dy;
     } else if (e.type === 'text') {
       e.x += dx; e.y += dy;
+    } else if (e.type === 'dim') {
+      if (e.dimType === 'linear') {
+        e.p1 = [e.p1[0] + dx, e.p1[1] + dy];
+        e.p2 = [e.p2[0] + dx, e.p2[1] + dy];
+        if (e.orient === 'h') e.offset += dy;
+        else if (e.orient === 'v') e.offset += dx;
+      } else if (e.dimType === 'dia' || e.dimType === 'rad') {
+        e.cx += dx; e.cy += dy;
+      } else if (e.dimType === 'chamfer') {
+        e.p1 = [e.p1[0] + dx, e.p1[1] + dy];
+        e.p2 = [e.p2[0] + dx, e.p2[1] + dy];
+        e.tail = [e.tail[0] + dx, e.tail[1] + dy];
+      }
+    } else if (e.type === 'leader') {
+      e.points = e.points.map(([x, y]) => [x + dx, y + dy]);
     }
   }
 }
@@ -182,6 +198,15 @@ export function entitySnapPoints(e) {
 
 // 実寸mmでのバウンディングボックス。kは縮尺係数(文字高さは用紙mmのため)
 export function entityBounds(e, k = 1) {
+  if (e.type === 'dim' || e.type === 'leader') {
+    const pts = dimLayout(e, k).lines.flat();
+    const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const p of pts) {
+      b.minX = Math.min(b.minX, p.x); b.minY = Math.min(b.minY, p.y);
+      b.maxX = Math.max(b.maxX, p.x); b.maxY = Math.max(b.maxY, p.y);
+    }
+    return b;
+  }
   if (e.type === 'circle' || e.type === 'arc') {
     return { minX: e.cx - e.r, minY: e.cy - e.r, maxX: e.cx + e.r, maxY: e.cy + e.r };
   }
@@ -204,6 +229,20 @@ export function entityBounds(e, k = 1) {
 
 // 点pが要素の線上(tolMm以内)にあるか
 export function hitTestEntity(e, p, tolMm, k = 1) {
+  if (e.type === 'dim' || e.type === 'leader') {
+    const layout = dimLayout(e, k);
+    for (const [a, b] of layout.lines) {
+      if (distancePointToSegment(p, a, b) <= tolMm) return true;
+    }
+    const textH = DIM_TEXT_MM / k;
+    for (const t of layout.texts) {
+      const w = t.content.length * textH;
+      const x0 = t.align === 'center' ? t.x - w / 2 : t.align === 'right' ? t.x - w : t.x;
+      if (p.x >= x0 - tolMm && p.x <= x0 + w + tolMm &&
+          p.y >= t.y - tolMm && p.y <= t.y + textH + tolMm) return true;
+    }
+    return false;
+  }
   if (e.type === 'circle') {
     return Math.abs(distance(p, { x: e.cx, y: e.cy }) - e.r) <= tolMm;
   }
