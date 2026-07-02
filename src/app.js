@@ -927,8 +927,9 @@ function applyNumPanel() {
 }
 el('num-draw').addEventListener('click', applyNumPanel);
 
-// 直線ドラフト中に長さ/角度欄でEnter → その数値で確定
-for (const id of ['num-len', 'num-ang']) {
+// どの欄でも Enter で反映。直線ドラフト中はその数値で確定。
+// 選択要素の編集中は、欄からフォーカスが外れた時(change)にも自動反映する。
+for (const id of ['num-x', 'num-y', 'num-len', 'num-ang']) {
   el(id).addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter') return;
     if (state.draft?.kind === 'line') {
@@ -942,6 +943,10 @@ for (const id of ['num-len', 'num-ang']) {
     } else {
       applyNumPanel();
     }
+  });
+  el(id).addEventListener('change', () => {
+    // 新規作図モードでは勝手に描かない。選択編集中のみ自動反映
+    if (selectedEditable()) applyNumPanel();
   });
 }
 
