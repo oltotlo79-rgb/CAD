@@ -19,11 +19,25 @@
     <button class="tool" data-tool="line">直線</button>
     <button class="tool" data-tool="polyline">連続線</button>
     <button class="tool" data-tool="rect">矩形</button>
+    <button class="tool" data-tool="circle">円</button>
+    <button class="tool" data-tool="arc">円弧</button>
+    <button class="tool" data-tool="ellipse">楕円</button>
+    <button class="tool" data-tool="text">文字</button>
     <button class="tool" data-tool="origin">原点設定</button>
   </div>
   <div class="group">
     <button id="undo">元に戻す</button>
     <button id="redo">やり直し</button>
+    <button id="rotate">回転90°</button>
+  </div>
+  <div class="group">
+    <label>線種 <select id="line-style">
+      <option value="outline" selected>外形線</option>
+      <option value="hidden">かくれ線</option>
+      <option value="center">中心線</option>
+      <option value="phantom">想像線</option>
+      <option value="aux">補助線</option>
+    </select></label>
   </div>
   <div class="group">
     <label>用紙 <select id="paper-size">
@@ -44,9 +58,18 @@
       <option selected>1</option><option>0.5</option><option>0.1</option>
     </select>
     <label><input type="checkbox" id="grid-snap" checked>スナップ</label>
+    <label><input type="checkbox" id="osnap" checked>点スナップ</label>
   </div>
 </header>
-<main id="canvas-wrap"><canvas id="canvas"></canvas></main>
+<div id="restore-banner">
+  <span>前回、未保存の変更が残ったまま終了したようです。復元しますか?</span>
+  <button id="restore-yes">復元する</button>
+  <button id="restore-no">破棄する</button>
+</div>
+<main id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+  <input id="text-entry" placeholder="文字を入力してEnter">
+</main>
 <section id="numpanel">
   <span>直線の数値入力:</span>
   <label>始点X <input id="num-x" size="7"></label>

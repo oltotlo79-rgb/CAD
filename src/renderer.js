@@ -1,7 +1,9 @@
 import { paperDimensions, frameRect } from './papers.js';
 import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
-import { entitySegments } from './model.js';
+import { entitySegments, LINE_STYLES } from './model.js';
+
+const DEG = Math.PI / 180;
 
 const COLORS = {
   background: '#3c4048',
@@ -14,6 +16,7 @@ const COLORS = {
   draft: '#0a8a3e',
   origin: '#cc4400',
   selectBox: '#0b6bcb',
+  snapHint: '#d63384',
 };
 
 function realToScreen(p, doc, view) {
@@ -43,6 +46,7 @@ export function draw(ctx, state) {
   drawEntities(ctx, doc, view, selection, k);
   drawOrigin(ctx, doc, view);
   if (draft) drawDraft(ctx, doc, view, draft);
+  if (state.snapHint) drawSnapHint(ctx, doc, view, state.snapHint);
 }
 
 function drawGrid(ctx, doc, view, frame, k) {
@@ -85,16 +89,70 @@ function strokeSegments(ctx, doc, view, segments) {
   ctx.stroke();
 }
 
-function drawEntities(ctx, doc, view, selection, k) {
-  const visible = new Map(doc.layers.map((l) => [l.id, l.visible]));
-  const baseWidth = Math.max(1, 0.5 * k * view.pxPerMm); // 外形線 0.5mm
-  for (const e of doc.entities) {
-    if (visible.get(e.layer) === false) continue;
-    const isSelected = selection.has(e.id);
-    ctx.strokeStyle = isSelected ? COLORS.selected : COLORS.entity;
-    ctx.lineWidth = isSelected ? baseWidth + 2 : baseWidth;
+function strokeEntity(ctx, doc, view, e, k) {
+  const z = k * view.pxPerMm;
+  if (e.type === 'circle') {
+    const c = realToScreen({ x: e.cx, y: e.cy }, doc, view);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, e.r * z, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (e.type === 'arc') {
+    const c = realToScreen({ x: e.cx, y: e.cy }, doc, view);
+    ctx.beginPath();
+    // 実座標はy上向き・画面はy下向きなので角度を反転して描く
+    ctx.arc(c.x, c.y, e.r * z, -e.endAngle * DEG, -e.startAngle * DEG, false);
+    ctx.stroke();
+  } else if (e.type === 'ellipse') {
+    const c = realToScreen({ x: e.cx, y: e.cy }, doc, view);
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, e.rx * z, e.ry * z, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (e.type === 'text') {
+    const p = realToScreen({ x: e.x, y: e.y }, doc, view);
+    ctx.font = `${Math.max(6, e.height * view.pxPerMm)}px "Yu Gothic UI", "Meiryo", sans-serif`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fillText(e.content, p.x, p.y);
+  } else {
     strokeSegments(ctx, doc, view, entitySegments(e));
   }
+}
+
+function drawEntities(ctx, doc, view, selection, k) {
+  const visible = new Map(doc.layers.map((l) => [l.id, l.visible]));
+  for (const e of doc.entities) {
+    if (visible.get(e.layer) === false) continue;
+    const style = LINE_STYLES[e.lineType] ?? LINE_STYLES.solid;
+    const isSelected = selection.has(e.id);
+    // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)
+    const width = Math.max(1, style.widthMm * view.pxPerMm);
+    ctx.strokeStyle = isSelected ? COLORS.selected : COLORS.entity;
+    ctx.lineWidth = isSelected ? width + 2 : width;
+    ctx.setLineDash(style.dashMm.map((mm) => Math.max(1.5, mm * view.pxPerMm)));
+    strokeEntity(ctx, doc, view, e, k);
+  }
+  ctx.setLineDash([]);
+}
+
+function drawSnapHint(ctx, doc, view, hint) {
+  const s = realToScreen(hint, doc, view);
+  ctx.save();
+  ctx.strokeStyle = COLORS.snapHint;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (hint.kind === 'end') {
+    ctx.rect(s.x - 5, s.y - 5, 10, 10);
+  } else if (hint.kind === 'mid') {
+    ctx.moveTo(s.x, s.y - 6); ctx.lineTo(s.x - 6, s.y + 5); ctx.lineTo(s.x + 6, s.y + 5);
+    ctx.closePath();
+  } else if (hint.kind === 'intersection') {
+    ctx.moveTo(s.x - 5, s.y - 5); ctx.lineTo(s.x + 5, s.y + 5);
+    ctx.moveTo(s.x - 5, s.y + 5); ctx.lineTo(s.x + 5, s.y - 5);
+  } else { // center / quad
+    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawOrigin(ctx, doc, view) {
@@ -136,6 +194,36 @@ function drawDraft(ctx, doc, view, draft) {
       const segs = [];
       for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1]]);
       strokeSegments(ctx, doc, view, segs);
+    } else if (draft.kind === 'circle') {
+      const k = scaleK(doc.scale);
+      const c = realToScreen(draft.center, doc, view);
+      const r = Math.hypot(draft.current.x - draft.center.x, draft.current.y - draft.center.y);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * k * view.pxPerMm, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (draft.kind === 'arc') {
+      const k = scaleK(doc.scale);
+      const c = realToScreen(draft.center, doc, view);
+      strokeSegments(ctx, doc, view, [[draft.center, draft.current]]);
+      if (draft.stage === 2) {
+        const r = Math.hypot(draft.startPoint.x - draft.center.x, draft.startPoint.y - draft.center.y);
+        const a0 = Math.atan2(draft.startPoint.y - draft.center.y, draft.startPoint.x - draft.center.x);
+        let a1 = Math.atan2(draft.current.y - draft.center.y, draft.current.x - draft.center.x);
+        while (a1 <= a0) a1 += Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, r * k * view.pxPerMm, -a1, -a0, false);
+        ctx.stroke();
+      }
+    } else if (draft.kind === 'ellipse') {
+      const k = scaleK(doc.scale);
+      const c = realToScreen(draft.center, doc, view);
+      const rx = Math.abs(draft.current.x - draft.center.x);
+      const ry = Math.abs(draft.current.y - draft.center.y);
+      if (rx > 0 && ry > 0) {
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y, rx * k * view.pxPerMm, ry * k * view.pxPerMm, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
   ctx.restore();
