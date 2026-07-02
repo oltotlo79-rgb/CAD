@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   round6, distance, angleDegOf, lineEndPoint, snapToGrid, distancePointToSegment,
+  rotate90Point, segSegIntersection, segCircleIntersections,
 } from '../src/geometry.js';
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} !~ ${b}`);
@@ -28,6 +29,36 @@ test('snapToGrid: 0.1mm ステップでも浮動小数のゴミが出ない', ()
 
 test('round6 は6桁で丸める', () => {
   assert.equal(round6(0.1 + 0.2), 0.3);
+});
+
+test('rotate90Point: (1,0)を原点まわりで(0,1)へ', () => {
+  assert.deepEqual(rotate90Point({ x: 1, y: 0 }, { x: 0, y: 0 }), { x: 0, y: 1 });
+  assert.deepEqual(rotate90Point({ x: 15, y: 10 }, { x: 10, y: 10 }), { x: 10, y: 15 });
+});
+
+test('segSegIntersection: 十字は交点、平行はnull、届かない線分もnull', () => {
+  assert.deepEqual(
+    segSegIntersection({ x: 0, y: -5 }, { x: 0, y: 5 }, { x: -5, y: 0 }, { x: 5, y: 0 }),
+    { x: 0, y: 0 });
+  assert.equal(
+    segSegIntersection({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 1 }, { x: 10, y: 1 }),
+    null);
+  assert.equal(
+    segSegIntersection({ x: 0, y: -5 }, { x: 0, y: 5 }, { x: 1, y: 0 }, { x: 5, y: 0 }),
+    null);
+});
+
+test('segCircleIntersections: 直径をなす線分は2交点、接線は1点、離れは0', () => {
+  const c = { x: 0, y: 0 };
+  assert.deepEqual(
+    segCircleIntersections({ x: -10, y: 0 }, { x: 10, y: 0 }, c, 5),
+    [{ x: -5, y: 0 }, { x: 5, y: 0 }]);
+  assert.deepEqual(
+    segCircleIntersections({ x: -10, y: 5 }, { x: 10, y: 5 }, c, 5),
+    [{ x: 0, y: 5 }]);
+  assert.deepEqual(
+    segCircleIntersections({ x: -10, y: 9 }, { x: 10, y: 9 }, c, 5),
+    []);
 });
 
 test('distancePointToSegment: 中央上は垂線距離、端の外は端点距離', () => {

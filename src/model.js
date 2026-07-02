@@ -1,4 +1,25 @@
 import { FRAME_MARGIN_MM } from './papers.js';
+import {
+  distance, angleDegOf, distancePointToSegment, rotate90Point,
+} from './geometry.js';
+
+// 線種ごとの描画スタイル。太さ・破線は用紙上mm(縮尺に依存しない)
+export const LINE_STYLES = {
+  solid:  { widthMm: 0.5,  dashMm: [] },
+  dashed: { widthMm: 0.35, dashMm: [3, 1.5] },
+  chain:  { widthMm: 0.25, dashMm: [8, 1.5, 1.5, 1.5] },
+  chain2: { widthMm: 0.25, dashMm: [8, 1.5, 1.5, 1.5, 1.5, 1.5] },
+  thin:   { widthMm: 0.25, dashMm: [] },
+};
+
+// 線種UIプリセット → lineType と配置レイヤー
+export const STYLE_PRESETS = {
+  outline: { label: '外形線',   lineType: 'solid',  layer: 'outline' },
+  hidden:  { label: 'かくれ線', lineType: 'dashed', layer: 'hidden' },
+  center:  { label: '中心線',   lineType: 'chain',  layer: 'center' },
+  phantom: { label: '想像線',   lineType: 'chain2', layer: 'outline' },
+  aux:     { label: '補助線',   lineType: 'thin',   layer: 'aux' },
+};
 
 export const DEFAULT_LAYERS = [
   { id: 'outline', name: '外形線', visible: true, printable: true },
@@ -45,6 +66,46 @@ export function translateEntities(doc, ids, dx, dy) {
       e.x += dx; e.y += dy;
     } else if (e.type === 'polyline') {
       e.points = e.points.map(([x, y]) => [x + dx, y + dy]);
+    } else if (e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse') {
+      e.cx += dx; e.cy += dy;
+    } else if (e.type === 'text') {
+      e.x += dx; e.y += dy;
+    }
+  }
+}
+
+// 選択要素を center まわりに +90°(反時計回り)回転する
+export function rotate90Entities(doc, ids, center) {
+  const target = new Set(ids);
+  for (const e of doc.entities) {
+    if (!target.has(e.id)) continue;
+    if (e.type === 'line') {
+      const p1 = rotate90Point({ x: e.x1, y: e.y1 }, center);
+      const p2 = rotate90Point({ x: e.x2, y: e.y2 }, center);
+      e.x1 = p1.x; e.y1 = p1.y; e.x2 = p2.x; e.y2 = p2.y;
+    } else if (e.type === 'rect') {
+      const c = rotate90Point({ x: e.x + e.width / 2, y: e.y + e.height / 2 }, center);
+      const w = e.height, h = e.width;
+      e.x = c.x - w / 2; e.y = c.y - h / 2; e.width = w; e.height = h;
+    } else if (e.type === 'polyline') {
+      e.points = e.points.map(([x, y]) => {
+        const p = rotate90Point({ x, y }, center);
+        return [p.x, p.y];
+      });
+    } else if (e.type === 'circle') {
+      const c = rotate90Point({ x: e.cx, y: e.cy }, center);
+      e.cx = c.x; e.cy = c.y;
+    } else if (e.type === 'arc') {
+      const c = rotate90Point({ x: e.cx, y: e.cy }, center);
+      e.cx = c.x; e.cy = c.y;
+      e.startAngle += 90; e.endAngle += 90;
+    } else if (e.type === 'ellipse') {
+      const c = rotate90Point({ x: e.cx, y: e.cy }, center);
+      e.cx = c.x; e.cy = c.y;
+      const rx = e.ry; e.ry = e.rx; e.rx = rx;
+    } else if (e.type === 'text') {
+      const p = rotate90Point({ x: e.x, y: e.y }, center);
+      e.x = p.x; e.y = p.y;
     }
   }
 }
@@ -80,6 +141,95 @@ export function entitySegments(e) {
     return segs;
   }
   return [];
+}
+
+const DEG = Math.PI / 180;
+
+// オブジェクトスナップの候補点(端点・中点・中心・四半点)
+export function entitySnapPoints(e) {
+  const pts = [];
+  const push = (x, y, kind) => pts.push({ x, y, kind });
+  if (e.type === 'line') {
+    push(e.x1, e.y1, 'end');
+    push(e.x2, e.y2, 'end');
+    push((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2, 'mid');
+  } else if (e.type === 'rect' || e.type === 'polyline') {
+    for (const [a, b] of entitySegments(e)) {
+      push(a.x, a.y, 'end');
+      push((a.x + b.x) / 2, (a.y + b.y) / 2, 'mid');
+    }
+    if (e.type === 'polyline' && !e.closed && e.points.length > 0) {
+      const last = e.points[e.points.length - 1];
+      push(last[0], last[1], 'end');
+    }
+  } else if (e.type === 'circle') {
+    push(e.cx, e.cy, 'center');
+    push(e.cx + e.r, e.cy, 'quad'); push(e.cx - e.r, e.cy, 'quad');
+    push(e.cx, e.cy + e.r, 'quad'); push(e.cx, e.cy - e.r, 'quad');
+  } else if (e.type === 'arc') {
+    push(e.cx, e.cy, 'center');
+    push(e.cx + e.r * Math.cos(e.startAngle * DEG), e.cy + e.r * Math.sin(e.startAngle * DEG), 'end');
+    push(e.cx + e.r * Math.cos(e.endAngle * DEG), e.cy + e.r * Math.sin(e.endAngle * DEG), 'end');
+  } else if (e.type === 'ellipse') {
+    push(e.cx, e.cy, 'center');
+    push(e.cx + e.rx, e.cy, 'quad'); push(e.cx - e.rx, e.cy, 'quad');
+    push(e.cx, e.cy + e.ry, 'quad'); push(e.cx, e.cy - e.ry, 'quad');
+  } else if (e.type === 'text') {
+    push(e.x, e.y, 'end');
+  }
+  return pts;
+}
+
+// 実寸mmでのバウンディングボックス。kは縮尺係数(文字高さは用紙mmのため)
+export function entityBounds(e, k = 1) {
+  if (e.type === 'circle' || e.type === 'arc') {
+    return { minX: e.cx - e.r, minY: e.cy - e.r, maxX: e.cx + e.r, maxY: e.cy + e.r };
+  }
+  if (e.type === 'ellipse') {
+    return { minX: e.cx - e.rx, minY: e.cy - e.ry, maxX: e.cx + e.rx, maxY: e.cy + e.ry };
+  }
+  if (e.type === 'text') {
+    const h = e.height / k;
+    const w = e.content.length * h;
+    return { minX: e.x, minY: e.y, maxX: e.x + w, maxY: e.y + h };
+  }
+  const pts = entitySegments(e).flat();
+  const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const p of pts) {
+    b.minX = Math.min(b.minX, p.x); b.minY = Math.min(b.minY, p.y);
+    b.maxX = Math.max(b.maxX, p.x); b.maxY = Math.max(b.maxY, p.y);
+  }
+  return b;
+}
+
+// 点pが要素の線上(tolMm以内)にあるか
+export function hitTestEntity(e, p, tolMm, k = 1) {
+  if (e.type === 'circle') {
+    return Math.abs(distance(p, { x: e.cx, y: e.cy }) - e.r) <= tolMm;
+  }
+  if (e.type === 'arc') {
+    const c = { x: e.cx, y: e.cy };
+    if (Math.abs(distance(p, c) - e.r) > tolMm) return false;
+    let sweep = e.endAngle - e.startAngle;
+    while (sweep < 0) sweep += 360;
+    let rel = angleDegOf(c, p) - e.startAngle;
+    while (rel < 0) rel += 360;
+    return rel <= sweep + 1e-9;
+  }
+  if (e.type === 'ellipse') {
+    if (e.rx <= 0 || e.ry <= 0) return false;
+    const t = Math.hypot((p.x - e.cx) / e.rx, (p.y - e.cy) / e.ry);
+    return Math.abs(t - 1) * Math.min(e.rx, e.ry) <= tolMm;
+  }
+  if (e.type === 'text') {
+    const b = entityBounds(e, k);
+    return p.x >= b.minX - tolMm && p.x <= b.maxX + tolMm &&
+           p.y >= b.minY - tolMm && p.y <= b.maxY + tolMm;
+  }
+  for (const [a, b] of entitySegments(e)) {
+    if (distancePointToSegment(p, a, b) <= tolMm) return true;
+  }
+  return false;
 }
 
 export function parseScale(text) {
