@@ -10,6 +10,8 @@ import {
 import { findSnap } from './snap.js';
 import { dimText } from './dims.js';
 import { projectionGuides, guideSnapCandidates } from './guides.js';
+import { toSVG } from './svgExport.js';
+import { titleBlockLayout } from './titleBlock.js';
 import { trimLine, extendLine, offsetEntity } from './editOps.js';
 import { mirrorEntities } from './model.js';
 import { saveBackup, loadBackup, clearBackup } from './snapshotStore.js';
@@ -254,6 +256,22 @@ canvas.addEventListener('dblclick', (ev) => {
       const initial = hit.type === 'dim' ? dimText(hit) : hit.content;
       openTextEntry(s, 'edit', { id: hit.id }, initial);
       return;
+    }
+    // 表題欄のフィールド編集(bind項目は自動反映のため編集不可)
+    const tb = titleBlockLayout(state.doc);
+    if (tb) {
+      const pp = vt.screenToPaper(s, state.view);
+      const row = tb.rows.find((r) =>
+        pp.x >= r.rect.x && pp.x <= r.rect.x + r.rect.width &&
+        pp.y >= r.rect.y && pp.y <= r.rect.y + r.rect.height);
+      if (row) {
+        if (!row.field.bind) {
+          ev.preventDefault();
+          const index = state.doc.titleBlock.fields.indexOf(row.field);
+          openTextEntry(s, 'titlefield', { index }, row.field.value ?? '');
+        }
+        return;
+      }
     }
   }
   finishPolyline();
@@ -665,6 +683,10 @@ textEntry.addEventListener('keydown', (ev) => {
       type: 'leader', points: [[ctx2.from.x, ctx2.from.y], [ctx2.elbow.x, ctx2.elbow.y]],
       content: value, override: null, layer: 'dim', lineType: 'thin',
     }));
+  } else if (mode === 'titlefield' && ctx2) {
+    state.doc.titleBlock.fields[ctx2.index].value = value;
+    markDirty();
+    render();
   } else if (mode === 'edit' && ctx2) {
     const target = state.doc.entities.find((en) => en.id === ctx2.id);
     if (target) {
@@ -847,6 +869,39 @@ el('file-open').addEventListener('click', async () => {
 el('file-save').addEventListener('click', () => saveFile(false));
 el('file-saveas').addEventListener('click', () => saveFile(true));
 
+// ---- SVG出力・印刷 ----
+function exportSVG() {
+  const svg = toSVG(state.doc);
+  const name = state.fileName.replace(/\.json$/i, '') + '.svg';
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+el('export-svg').addEventListener('click', exportSVG);
+
+// 実寸印刷: 用紙サイズを@pageに指定したSVGを印刷ダイアログへ。
+// 印刷時は倍率100%(実際のサイズ)を指定すること。
+function printDrawing() {
+  const svg = toSVG(state.doc);
+  const paper = paperDimensions(state.doc.paper.size, state.doc.paper.orientation);
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '100%';
+  document.body.appendChild(iframe);
+  const idoc = iframe.contentDocument;
+  idoc.open();
+  idoc.write(`<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${paper.width}mm ${paper.height}mm;margin:0}html,body{margin:0;padding:0}svg{display:block}</style></head><body>${svg}</body></html>`);
+  idoc.close();
+  iframe.contentWindow.focus();
+  iframe.contentWindow.print();
+  setTimeout(() => iframe.remove(), 60000);
+}
+el('print').addEventListener('click', printDrawing);
+
 // ---- ドラッグ&ドロップで開く ----
 window.addEventListener('dragover', (ev) => ev.preventDefault());
 window.addEventListener('drop', async (ev) => {
@@ -906,6 +961,7 @@ window.addEventListener('keyup', (ev) => {
 });
 
 // ---- 起動 ----
+window.__seizu = state; // デバッグ・動作検証用(読み取り想定)
 resizeCanvas();
 syncSettingsUI();
 buildLayerPanel();

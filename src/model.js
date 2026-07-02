@@ -3,6 +3,7 @@ import {
   distance, angleDegOf, distancePointToSegment, rotate90Point,
 } from './geometry.js';
 import { dimLayout, DIM_TEXT_MM } from './dims.js';
+import { DEFAULT_TITLE_FIELDS } from './titleBlock.js';
 
 // 線種ごとの描画スタイル。太さ・破線は用紙上mm(縮尺に依存しない)
 export const LINE_STYLES = {
@@ -40,6 +41,7 @@ export function createDocument({ paperSize = 'A3', orientation = 'landscape' } =
     userOrigin: { x: FRAME_MARGIN_MM, y: FRAME_MARGIN_MM },
     grid: { mode: 'auto', manualMm: 1 },
     mirror45: null, // 45°ミラー線の通過点 {x,y}(実寸mm)。nullなら未設定
+    titleBlock: { fields: DEFAULT_TITLE_FIELDS.map((f) => ({ ...f })) },
     layers: DEFAULT_LAYERS.map((l) => ({ ...l })),
     nextId: 1,
     entities: [],

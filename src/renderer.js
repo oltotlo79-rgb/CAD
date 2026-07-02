@@ -3,6 +3,7 @@ import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
 import { entitySegments, LINE_STYLES } from './model.js';
 import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM } from './dims.js';
+import { titleBlockLayout } from './titleBlock.js';
 
 const DEG = Math.PI / 180;
 
@@ -45,6 +46,7 @@ export function draw(ctx, state) {
   ctx.lineWidth = Math.max(1, 0.7 * view.pxPerMm);
   ctx.strokeRect(ftl.x, ftl.y, frame.width * view.pxPerMm, frame.height * view.pxPerMm);
 
+  drawTitleBlock(ctx, doc, view);
   drawEntities(ctx, doc, view, selection, k);
   drawOrigin(ctx, doc, view);
   if (draft) drawDraft(ctx, doc, view, draft);
@@ -77,6 +79,41 @@ function drawGrid(ctx, doc, view, frame, k) {
   for (let i = Math.ceil(y0 / step); i * step <= y1; i++) {
     const y = i * step;
     drawLine(realToScreen({ x: x0, y }, doc, view), realToScreen({ x: x1, y }, doc, view), isMajor(y));
+  }
+}
+
+function drawTitleBlock(ctx, doc, view) {
+  const tb = titleBlockLayout(doc);
+  if (!tb) return;
+  const z = view.pxPerMm;
+  const P = (x, y) => paperToScreen({ x, y }, view);
+  ctx.strokeStyle = COLORS.frame;
+  ctx.lineWidth = Math.max(1, 0.35 * z);
+  const tl = P(tb.x, tb.y + tb.height);
+  ctx.strokeRect(tl.x, tl.y, tb.width * z, tb.height * z);
+  ctx.beginPath();
+  for (const row of tb.rows) {
+    const a = P(row.rect.x, row.rect.y);
+    const b = P(row.rect.x + row.rect.width, row.rect.y);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+  }
+  const la = P(tb.x + tb.labelWidth, tb.y);
+  const lb = P(tb.x + tb.labelWidth, tb.y + tb.height);
+  ctx.moveTo(la.x, la.y);
+  ctx.lineTo(lb.x, lb.y);
+  ctx.stroke();
+  ctx.fillStyle = COLORS.entity;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  for (const row of tb.rows) {
+    const baseY = row.rect.y + row.rect.height / 2 - 1.2;
+    const lp = P(row.rect.x + 2, baseY);
+    ctx.font = `${Math.max(6, 2.5 * z)}px "Yu Gothic UI", "Meiryo", sans-serif`;
+    ctx.fillText(row.field.label, lp.x, lp.y);
+    const vp = P(row.rect.x + tb.labelWidth + 2, baseY);
+    ctx.font = `${Math.max(6, 3.5 * z)}px "Yu Gothic UI", "Meiryo", sans-serif`;
+    ctx.fillText(row.text, vp.x, vp.y);
   }
 }
 
