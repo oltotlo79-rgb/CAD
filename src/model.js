@@ -159,6 +159,57 @@ export function entitySegments(e) {
   return [];
 }
 
+// 選択要素を鏡映反転する。axis='x'は左右反転(x=center.xの縦軸)、'y'は上下反転
+export function mirrorEntities(doc, ids, axis, center) {
+  const target = new Set(ids);
+  const mx = (x) => 2 * center.x - x;
+  const my = (y) => 2 * center.y - y;
+  const mp = (x, y) => (axis === 'x' ? [mx(x), y] : [x, my(y)]);
+  // 円弧などの角度: 左右反転はθ→180-θ、上下反転はθ→-θ(掃引の向きを保つためstart/endを入替)
+  const mAngles = (start, end) => (axis === 'x'
+    ? [180 - end, 180 - start]
+    : [-end || 0, -start || 0]); // `|| 0` は -0 を +0 に正規化
+  for (const e of doc.entities) {
+    if (!target.has(e.id)) continue;
+    if (e.type === 'line') {
+      [e.x1, e.y1] = mp(e.x1, e.y1);
+      [e.x2, e.y2] = mp(e.x2, e.y2);
+    } else if (e.type === 'rect') {
+      const [nx, ny] = mp(e.x, e.y);
+      e.x = axis === 'x' ? nx - e.width : nx;
+      e.y = axis === 'y' ? ny - e.height : ny;
+    } else if (e.type === 'polyline') {
+      e.points = e.points.map(([x, y]) => mp(x, y));
+    } else if (e.type === 'circle') {
+      [e.cx, e.cy] = mp(e.cx, e.cy);
+    } else if (e.type === 'arc') {
+      [e.cx, e.cy] = mp(e.cx, e.cy);
+      [e.startAngle, e.endAngle] = mAngles(e.startAngle, e.endAngle);
+    } else if (e.type === 'ellipse') {
+      [e.cx, e.cy] = mp(e.cx, e.cy);
+    } else if (e.type === 'text') {
+      [e.x, e.y] = mp(e.x, e.y);
+    } else if (e.type === 'dim') {
+      if (e.dimType === 'linear') {
+        e.p1 = mp(e.p1[0], e.p1[1]);
+        e.p2 = mp(e.p2[0], e.p2[1]);
+        if (e.orient === 'h' && axis === 'y') e.offset = my(e.offset);
+        else if (e.orient === 'v' && axis === 'x') e.offset = mx(e.offset);
+        else if (e.orient === 'aligned') e.offset = -e.offset;
+      } else if (e.dimType === 'dia' || e.dimType === 'rad') {
+        [e.cx, e.cy] = mp(e.cx, e.cy);
+        e.angleDeg = axis === 'x' ? 180 - e.angleDeg : -e.angleDeg;
+      } else if (e.dimType === 'chamfer') {
+        e.p1 = mp(e.p1[0], e.p1[1]);
+        e.p2 = mp(e.p2[0], e.p2[1]);
+        e.tail = mp(e.tail[0], e.tail[1]);
+      }
+    } else if (e.type === 'leader') {
+      e.points = e.points.map(([x, y]) => mp(x, y));
+    }
+  }
+}
+
 const DEG = Math.PI / 180;
 
 // オブジェクトスナップの候補点(端点・中点・中心・四半点)

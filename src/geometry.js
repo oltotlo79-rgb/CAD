@@ -64,6 +64,30 @@ export function segCircleIntersections(a, b, c, r) {
   return out;
 }
 
+// 半直線(origin+t*dir, t>=0)×線分cd。交点のt(dir単位)を返す。なければnull
+export function raySegIntersection(origin, dir, c, d) {
+  const s = { x: d.x - c.x, y: d.y - c.y };
+  const denom = dir.x * s.y - dir.y * s.x;
+  if (Math.abs(denom) < 1e-12) return null;
+  const t = ((c.x - origin.x) * s.y - (c.y - origin.y) * s.x) / denom;
+  const u = ((c.x - origin.x) * dir.y - (c.y - origin.y) * dir.x) / denom;
+  if (t < 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+  return t;
+}
+
+// 半直線×円。交点のt列(t>=0)を返す
+export function rayCircleIntersections(origin, dir, c, r) {
+  const f = { x: origin.x - c.x, y: origin.y - c.y };
+  const A = dir.x * dir.x + dir.y * dir.y;
+  if (A === 0) return [];
+  const B = 2 * (f.x * dir.x + f.y * dir.y);
+  const C = f.x * f.x + f.y * f.y - r * r;
+  let disc = B * B - 4 * A * C;
+  if (disc < 0) return [];
+  disc = Math.sqrt(disc);
+  return [(-B - disc) / (2 * A), (-B + disc) / (2 * A)].filter((t) => t > 1e-9);
+}
+
 export function distancePointToSegment(p, a, b) {
   const abx = b.x - a.x, aby = b.y - a.y;
   const len2 = abx * abx + aby * aby;
