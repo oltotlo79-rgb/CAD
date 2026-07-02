@@ -49,6 +49,19 @@ test('dimLayout: 縮尺1:2では突き出し・文字位置が実寸換算(2倍)
   assert.equal(l2.lines[0][1].y, 24);
 });
 
+test('角度寸法: 90°の値と円弧レイアウト', () => {
+  const e = {
+    type: 'dim', dimType: 'angle',
+    vertex: [0, 0], p1: [10, 0], p2: [0, 10], radius: 8,
+  };
+  assert.equal(dimText(e), '90°');
+  const l = dimLayout(e, 1);
+  assert.equal(l.arcs.length, 1);
+  assert.deepEqual([l.arcs[0].r, l.arcs[0].startDeg, l.arcs[0].endDeg], [8, 0, 90]);
+  assert.equal(l.lines.length, 2);  // 頂点から両レイへの補助線
+  assert.equal(l.arrows.length, 2); // 弧の両端
+});
+
 test('dimLayout 引出線: 矢印の先端は対象点', () => {
   const e = { type: 'leader', points: [[0, 0], [10, 10]], content: 'M6' };
   const { arrows, lines } = dimLayout(e, 1);

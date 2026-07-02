@@ -38,6 +38,8 @@
     <button class="tool" data-tool="roughness">粗さ</button>
     <button class="tool" data-tool="fcf">公差枠</button>
     <button class="tool" data-tool="hatch">ハッチ</button>
+    <input id="hatch-angle" size="3" value="45" title="ハッチ角度(°)">
+    <input id="hatch-space" size="3" value="3" title="ハッチ間隔(用紙mm)">
     <button class="tool" data-tool="balloon">バルーン</button>
     <button class="tool" data-tool="bom">部品表</button>
   </div>
@@ -54,7 +56,8 @@
     <button class="tool" data-tool="offset">オフセット</button>
     <input id="offset-dist" size="4" value="10" title="オフセット距離(mm)">
     <button class="tool" data-tool="fillet">フィレット</button>
-    <input id="fillet-r" size="4" value="5" title="フィレット半径(mm)">
+    <button class="tool" data-tool="chamferEdit">面取り</button>
+    <input id="fillet-r" size="4" value="5" title="フィレット半径 / 面取りサイズ(mm)">
   </div>
   <div class="group">
     <label>線種 <select id="line-style">

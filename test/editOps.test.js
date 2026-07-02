@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { trimLine, extendLine, offsetEntity, filletLines } from '../src/editOps.js';
+import { trimLine, extendLine, offsetEntity, filletLines, chamferLines } from '../src/editOps.js';
 
 const hline = { type: 'line', layer: 'outline', lineType: 'solid', x1: 0, y1: 0, x2: 100, y2: 0 };
 const cutterAt = (x) => ({ type: 'line', x1: x, y1: -10, x2: x, y2: 10 });
@@ -59,6 +59,15 @@ test('filletLines: 交差しない位置の線も延長してフィレットさ�
   const f = filletLines(l1, { x: 20, y: 0 }, l2, { x: 0, y: 20 }, 5);
   assert.deepEqual([f.l1.x1, f.l1.y1], [5, 0]); // 接点まで延長
   assert.deepEqual([f.l2.x1, f.l2.y1], [0, 5]);
+});
+
+test('chamferLines: 直角の角がC5の斜め線に置き換わる', () => {
+  const l1 = { x1: 0, y1: 0, x2: 20, y2: 0 };
+  const l2 = { x1: 0, y1: 0, x2: 0, y2: 20 };
+  const c = chamferLines(l1, { x: 10, y: 0 }, l2, { x: 0, y: 10 }, 5);
+  assert.deepEqual(c.l1, { x1: 5, y1: 0, x2: 20, y2: 0 });
+  assert.deepEqual(c.l2, { x1: 0, y1: 5, x2: 0, y2: 20 });
+  assert.deepEqual(c.line, { x1: 5, y1: 0, x2: 0, y2: 5 });
 });
 
 test('filletLines: 平行線は null', () => {
