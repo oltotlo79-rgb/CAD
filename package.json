@@ -1,0 +1,13 @@
+{
+  "name": "seizu-tool",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "dev": "esbuild src/app.js --bundle --outfile=www/app.js --servedir=www --watch",
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
