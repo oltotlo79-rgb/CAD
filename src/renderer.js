@@ -2,6 +2,7 @@ import { paperDimensions, frameRect } from './papers.js';
 import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
 import { entitySegments, LINE_STYLES } from './model.js';
+import { dimLayout, DIM_TEXT_MM, DIM_ARROW_MM } from './dims.js';
 
 const DEG = Math.PI / 180;
 
@@ -111,11 +112,53 @@ function strokeEntity(ctx, doc, view, e, k) {
     const p = realToScreen({ x: e.x, y: e.y }, doc, view);
     ctx.font = `${Math.max(6, e.height * view.pxPerMm)}px "Yu Gothic UI", "Meiryo", sans-serif`;
     ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
     ctx.fillStyle = ctx.strokeStyle;
     ctx.fillText(e.content, p.x, p.y);
+  } else if (e.type === 'dim' || e.type === 'leader') {
+    const layout = dimLayout(e, k);
+    strokeSegments(ctx, doc, view, layout.lines);
+    drawArrows(ctx, doc, view, layout.arrows);
+    drawDimTexts(ctx, doc, view, layout.texts);
   } else {
     strokeSegments(ctx, doc, view, entitySegments(e));
   }
+}
+
+function drawArrows(ctx, doc, view, arrows) {
+  const L = DIM_ARROW_MM * view.pxPerMm;
+  const W = L / 3;
+  ctx.fillStyle = ctx.strokeStyle;
+  for (const a of arrows) {
+    const tip = realToScreen(a.at, doc, view);
+    const ang = -a.angleDeg * DEG; // y反転で角度も反転
+    const bx = tip.x - L * Math.cos(ang);
+    const by = tip.y - L * Math.sin(ang);
+    const px = -Math.sin(ang);
+    const py = Math.cos(ang);
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(bx + px * W / 2, by + py * W / 2);
+    ctx.lineTo(bx - px * W / 2, by - py * W / 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawDimTexts(ctx, doc, view, texts) {
+  ctx.font = `${Math.max(6, DIM_TEXT_MM * view.pxPerMm)}px "Yu Gothic UI", "Meiryo", sans-serif`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = ctx.strokeStyle;
+  for (const t of texts) {
+    const p = realToScreen({ x: t.x, y: t.y }, doc, view);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    if (t.angleDeg) ctx.rotate(-t.angleDeg * DEG);
+    ctx.textAlign = t.align === 'center' ? 'center' : t.align === 'right' ? 'right' : 'left';
+    ctx.fillText(t.content, 0, 0);
+    ctx.restore();
+  }
+  ctx.textAlign = 'left';
 }
 
 function drawEntities(ctx, doc, view, selection, k) {
@@ -214,6 +257,18 @@ function drawDraft(ctx, doc, view, draft) {
         ctx.arc(c.x, c.y, r * k * view.pxPerMm, -a1, -a0, false);
         ctx.stroke();
       }
+    } else if (draft.kind === 'dim') {
+      if (draft.stage === 1) {
+        strokeSegments(ctx, doc, view, [[draft.p1, draft.current]]);
+      } else if (draft.orient) {
+        const temp = {
+          type: 'dim', dimType: 'linear', orient: draft.orient,
+          p1: [draft.p1.x, draft.p1.y], p2: [draft.p2.x, draft.p2.y], offset: draft.offset,
+        };
+        strokeSegments(ctx, doc, view, dimLayout(temp, scaleK(doc.scale)).lines);
+      }
+    } else if (draft.kind === 'chamfer' || draft.kind === 'leaderDraft') {
+      strokeSegments(ctx, doc, view, [[draft.from, draft.current]]);
     } else if (draft.kind === 'ellipse') {
       const k = scaleK(doc.scale);
       const c = realToScreen(draft.center, doc, view);

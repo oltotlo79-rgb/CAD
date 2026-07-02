@@ -26,6 +26,13 @@
     <button class="tool" data-tool="origin">原点設定</button>
   </div>
   <div class="group">
+    <button class="tool" data-tool="dim">寸法</button>
+    <button class="tool" data-tool="dia">φ</button>
+    <button class="tool" data-tool="rad">R</button>
+    <button class="tool" data-tool="chamfer">C</button>
+    <button class="tool" data-tool="leader">引出線</button>
+  </div>
+  <div class="group">
     <button id="undo">元に戻す</button>
     <button id="redo">やり直し</button>
     <button id="rotate">回転90°</button>
@@ -77,7 +84,7 @@
   <label>長さ <input id="num-len" size="7"></label>
   <label>角度 <input id="num-ang" size="7" value="0"></label>
   <button id="num-draw">作図</button>
-  <span class="hint">マウス作図中はEnterで数値確定 / Escで中止 / 連続線はEnterかダブルクリックで完了</span>
+  <span class="hint">Escで中止 / 連続線はEnterで完了 / 寸法は2点+配置点 / 寸法値はダブルクリックで上書き</span>
 </section>
 <footer id="statusbar">&nbsp;</footer>
 <script src="app.js" defer></script>
