@@ -25,6 +25,7 @@ export function deserialize(text) {
     userOrigin: { ...base.userOrigin, ...data.userOrigin },
     grid: { ...base.grid, ...data.grid },
     layers: Array.isArray(data.layers) ? data.layers : base.layers,
+    mirror45: data.mirror45 ?? null,
     entities,
     nextId: data.nextId ?? maxId + 1,
   };

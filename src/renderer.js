@@ -38,6 +38,7 @@ export function draw(ctx, state) {
   ctx.fillRect(tl.x, tl.y, paper.width * view.pxPerMm, paper.height * view.pxPerMm);
 
   drawGrid(ctx, doc, view, frame, k);
+  drawProjection(ctx, doc, view, state, paper, k);
 
   const ftl = paperToScreen({ x: frame.x, y: frame.y + frame.height }, view);
   ctx.strokeStyle = COLORS.frame;
@@ -77,6 +78,34 @@ function drawGrid(ctx, doc, view, frame, k) {
     const y = i * step;
     drawLine(realToScreen({ x: x0, y }, doc, view), realToScreen({ x: x1, y }, doc, view), isMajor(y));
   }
+}
+
+// 投影補助線(選択要素由来の一時ガイド)と45°ミラー線
+function drawProjection(ctx, doc, view, state, paper, k) {
+  const g = state.guides;
+  const m45 = state.show45 ? doc.mirror45 : null;
+  const hasGuides = g && (g.xs.length > 0 || g.ys.length > 0);
+  if (!hasGuides && !m45) return;
+  const W = paper.width / k;  // 実寸mmでの用紙範囲
+  const H = paper.height / k;
+  ctx.save();
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 1;
+  if (hasGuides) {
+    ctx.strokeStyle = '#3f8efc';
+    for (const gx of g.xs) {
+      strokeSegments(ctx, doc, view, [[{ x: gx, y: 0 }, { x: gx, y: H }]]);
+    }
+    for (const gy of g.ys) {
+      strokeSegments(ctx, doc, view, [[{ x: 0, y: gy }, { x: W, y: gy }]]);
+    }
+  }
+  if (m45) {
+    ctx.strokeStyle = '#e8590c';
+    const c = m45.y - m45.x; // y = x + c
+    strokeSegments(ctx, doc, view, [[{ x: -H, y: -H + c }, { x: W + H, y: W + H + c }]]);
+  }
+  ctx.restore();
 }
 
 function strokeSegments(ctx, doc, view, segments) {

@@ -36,6 +36,14 @@
     <button id="undo">元に戻す</button>
     <button id="redo">やり直し</button>
     <button id="rotate">回転90°</button>
+    <button id="mirror-x">左右反転</button>
+    <button id="mirror-y">上下反転</button>
+  </div>
+  <div class="group">
+    <button class="tool" data-tool="trim">トリム</button>
+    <button class="tool" data-tool="extend">延長</button>
+    <button class="tool" data-tool="offset">オフセット</button>
+    <input id="offset-dist" size="4" value="10" title="オフセット距離(mm)">
   </div>
   <div class="group">
     <label>線種 <select id="line-style">
@@ -66,6 +74,15 @@
     </select>
     <label><input type="checkbox" id="grid-snap" checked>スナップ</label>
     <label><input type="checkbox" id="osnap" checked>点スナップ</label>
+  </div>
+  <div class="group">
+    <label><input type="checkbox" id="proj-guides" checked>投影ガイド</label>
+    <button class="tool" data-tool="mirror45">45°線配置</button>
+    <label><input type="checkbox" id="show45" checked>45°線</label>
+    <details id="layer-panel">
+      <summary>レイヤー</summary>
+      <div id="layer-list"></div>
+    </details>
   </div>
 </header>
 <div id="restore-banner">

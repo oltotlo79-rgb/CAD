@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createDocument, addEntity, removeEntities, translateEntities,
   duplicateEntities, entitySegments, parseScale, formatScale, DEFAULT_LAYERS,
-  rotate90Entities, entitySnapPoints, entityBounds, hitTestEntity,
+  rotate90Entities, mirrorEntities, entitySnapPoints, entityBounds, hitTestEntity,
   LINE_STYLES, STYLE_PRESETS,
 } from '../src/model.js';
 
@@ -98,6 +98,24 @@ test('rotate90Entities: 線分・矩形・円弧・楕円が90°回転する', (
   assert.deepEqual([r.x, r.y, r.width, r.height], [-4, 0, 4, 10]);
   assert.deepEqual([a.cx, a.cy, a.startAngle, a.endAngle], [0, 10, 90, 180]);
   assert.deepEqual([e.rx, e.ry], [3, 8]);
+});
+
+test('mirrorEntities: 左右反転で線分・矩形・円弧が鏡映される', () => {
+  const doc = createDocument();
+  const l = addEntity(doc, { type: 'line', x1: 10, y1: 0, x2: 30, y2: 5 });
+  const r = addEntity(doc, { type: 'rect', x: 10, y: 0, width: 20, height: 10 });
+  const a = addEntity(doc, { type: 'arc', cx: 10, cy: 0, r: 5, startAngle: 0, endAngle: 90 });
+  mirrorEntities(doc, [l.id, r.id, a.id], 'x', { x: 50, y: 0 });
+  assert.deepEqual([l.x1, l.y1, l.x2, l.y2], [90, 0, 70, 5]);
+  assert.deepEqual([r.x, r.y, r.width, r.height], [70, 0, 20, 10]);
+  assert.deepEqual([a.cx, a.startAngle, a.endAngle], [90, 90, 180]);
+});
+
+test('mirrorEntities: 上下反転で円弧の角度が -θ 入替になる', () => {
+  const doc = createDocument();
+  const a = addEntity(doc, { type: 'arc', cx: 0, cy: 10, r: 5, startAngle: 0, endAngle: 90 });
+  mirrorEntities(doc, [a.id], 'y', { x: 0, y: 0 });
+  assert.deepEqual([a.cy, a.startAngle, a.endAngle], [-10, -90, 0]);
 });
 
 test('entitySnapPoints: 線分は端点2+中点1、円は中心+四半点4', () => {
