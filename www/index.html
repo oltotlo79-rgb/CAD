@@ -29,6 +29,7 @@
     <button class="tool" data-tool="circle">円</button>
     <button class="tool" data-tool="arc">円弧</button>
     <button class="tool" data-tool="ellipse">楕円</button>
+    <button class="tool" data-tool="earc">楕円弧</button>
     <button class="tool" data-tool="spline">スプライン</button>
     <button class="tool" data-tool="text">文字</button>
     <button class="tool" data-tool="origin">原点設定</button>
@@ -114,12 +115,8 @@
   <input id="text-entry" placeholder="文字を入力してEnter">
 </main>
 <section id="numpanel">
-  <span>数値入力:</span>
-  <label><span id="lbl-x">始点X</span> <input id="num-x" size="7"></label>
-  <label>Y <input id="num-y" size="7"></label>
-  <label><span id="lbl-len">長さ</span> <input id="num-len" size="7"></label>
-  <label><span id="lbl-ang">角度</span> <input id="num-ang" size="7" value="0"></label>
-  <label id="num-ang2-wrap" style="display:none">終了角 <input id="num-ang2" size="7"></label>
+  <span id="np-title">数値入力:</span>
+  <span id="np-fields"></span>
   <button id="num-draw">作図</button>
   <span class="hint">Escで中止 / 連続線はEnterで完了 / 寸法値・表題欄・部品表のセルはダブルクリックで記入</span>
 </section>

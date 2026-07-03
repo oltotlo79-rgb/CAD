@@ -52,7 +52,7 @@ export function draw(ctx, state) {
   ctx.strokeRect(ftl.x, ftl.y, frame.width * view.pxPerMm, frame.height * view.pxPerMm);
 
   drawTitleBlock(ctx, doc, view);
-  drawEntities(ctx, doc, view, selection, k);
+  drawEntities(ctx, doc, view, state, k);
   drawOrigin(ctx, doc, view);
   if (draft) drawDraft(ctx, doc, view, draft);
   if (state.copyDrag) drawCopyGhost(ctx, doc, view, state.copyDrag);
@@ -191,8 +191,13 @@ function strokeEntity(ctx, doc, view, e, k) {
     ctx.stroke();
   } else if (e.type === 'ellipse') {
     const c = realToScreen({ x: e.cx, y: e.cy }, doc, view);
+    const rot = -(e.rotation ?? 0) * DEG; // y反転で回転も反転
     ctx.beginPath();
-    ctx.ellipse(c.x, c.y, e.rx * z, e.ry * z, 0, 0, Math.PI * 2);
+    if (e.startAngle != null && e.endAngle != null) {
+      ctx.ellipse(c.x, c.y, e.rx * z, e.ry * z, rot, -e.endAngle * DEG, -e.startAngle * DEG, false);
+    } else {
+      ctx.ellipse(c.x, c.y, e.rx * z, e.ry * z, rot, 0, Math.PI * 2);
+    }
     ctx.stroke();
   } else if (e.type === 'text') {
     const p = realToScreen({ x: e.x, y: e.y }, doc, view);
@@ -200,7 +205,11 @@ function strokeEntity(ctx, doc, view, e, k) {
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.fillText(e.content, p.x, p.y);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    if (e.rotation) ctx.rotate(-e.rotation * DEG);
+    ctx.fillText(e.content, 0, 0);
+    ctx.restore();
   } else if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
     const layout = annotationLayout(e, k);
     strokeSegments(ctx, doc, view, layout.lines);
@@ -276,7 +285,8 @@ function drawDimTexts(ctx, doc, view, texts) {
   ctx.textAlign = 'left';
 }
 
-function drawEntities(ctx, doc, view, selection, k) {
+function drawEntities(ctx, doc, view, state, k) {
+  const { selection, subSel } = state;
   const visible = new Map(doc.layers.map((l) => [l.id, l.visible]));
   for (const e of doc.entities) {
     if (visible.get(e.layer) === false) continue;
@@ -288,6 +298,24 @@ function drawEntities(ctx, doc, view, selection, k) {
     ctx.lineWidth = isSelected ? width + 2 : width;
     ctx.setLineDash(style.dashMm.map((mm) => Math.max(1.5, mm * view.pxPerMm)));
     strokeEntity(ctx, doc, view, e, k);
+    // 連続線/スプラインのセグメント選択の強調表示
+    if (isSelected && subSel != null && selection.size === 1
+      && (e.type === 'polyline' || e.type === 'spline')) {
+      const n = e.points.length;
+      const a = e.points[subSel];
+      const b = e.points[(subSel + 1) % n];
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#e8590c';
+      ctx.lineWidth = width + 3;
+      strokeSegments(ctx, doc, view,
+        [[{ x: a[0], y: a[1] }, { x: b[0], y: b[1] }]]);
+      for (const [vx, vy] of [a, b]) {
+        const sp = realToScreen({ x: vx, y: vy }, doc, view);
+        ctx.strokeRect(sp.x - 4, sp.y - 4, 8, 8);
+      }
+      ctx.restore();
+    }
   }
   ctx.setLineDash([]);
 }
@@ -403,6 +431,28 @@ function drawDraft(ctx, doc, view, draft) {
         ctx.beginPath();
         ctx.ellipse(c.x, c.y, rx * k * view.pxPerMm, ry * k * view.pxPerMm, 0, 0, Math.PI * 2);
         ctx.stroke();
+      }
+    } else if (draft.kind === 'earc') {
+      const k = scaleK(doc.scale);
+      const c = realToScreen(draft.center, doc, view);
+      const z2 = k * view.pxPerMm;
+      if (draft.stage === 1) {
+        strokeSegments(ctx, doc, view, [[draft.center, draft.current]]);
+      } else {
+        const rx = draft.rx ?? Math.abs(draft.current.x - draft.center.x);
+        const ry = draft.ry ?? Math.abs(draft.current.y - draft.center.y);
+        if (rx > 0 && ry > 0) {
+          ctx.beginPath();
+          if (draft.stage === 3 && draft.startParam != null) {
+            let end = Math.atan2((draft.current.y - draft.center.y) / ry,
+              (draft.current.x - draft.center.x) / rx) / DEG;
+            while (end <= draft.startParam) end += 360;
+            ctx.ellipse(c.x, c.y, rx * z2, ry * z2, 0, -end * DEG, -draft.startParam * DEG, false);
+          } else {
+            ctx.ellipse(c.x, c.y, rx * z2, ry * z2, 0, 0, Math.PI * 2);
+          }
+          ctx.stroke();
+        }
       }
     }
   }

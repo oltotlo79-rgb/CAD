@@ -39,5 +39,7 @@ input:disabled, select:disabled { opacity: 0.4; }
   display: flex; gap: 8px; align-items: center;
   padding: 5px 10px; background: #1e2126; border-top: 1px solid #000;
 }
+#np-fields { display: flex; gap: 8px; align-items: center; }
+#np-fields label { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
 #numpanel .hint { color: #888; margin-left: auto; }
 #statusbar { padding: 4px 10px; background: #14161a; color: #9ab; font-family: Consolas, monospace; }
