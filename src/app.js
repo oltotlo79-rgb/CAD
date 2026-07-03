@@ -202,6 +202,7 @@ function render() {
   draw(ctx, state);
   updateStatus();
   syncNumPanel();
+  updateScrollbars();
 }
 
 // ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
@@ -384,19 +385,16 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 // ---- パン・ズーム ----
-// スクロール=上下パン / Shift+スクロール=左右パン / Ctrl+スクロール=拡大縮小
-// (Excelと同じ操作系。Ctrl+ホイールはトラックパッドのピンチでも発生する)
+// スクロール=上下パン / Shift+スクロール・Ctrl+スクロール=拡大縮小
+// 左右の移動は横スクロールバー(またはチルトホイール/トラックパッド)
 canvas.addEventListener('wheel', (ev) => {
   ev.preventDefault();
   const z = state.view.pxPerMm;
-  if (ev.ctrlKey) {
+  if (ev.ctrlKey || ev.shiftKey) {
+    // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
     const dy = ev.deltaY !== 0 ? ev.deltaY : ev.deltaX;
     const factor = dy < 0 ? 1.2 : 1 / 1.2;
     state.view = vt.zoomAt(state.view, eventScreen(ev), factor);
-  } else if (ev.shiftKey) {
-    // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
-    const dx = ev.deltaX !== 0 ? ev.deltaX : ev.deltaY;
-    state.view = { ...state.view, panX: state.view.panX + dx / z };
   } else {
     state.view = {
       ...state.view,
@@ -406,6 +404,90 @@ canvas.addEventListener('wheel', (ev) => {
   }
   render();
 }, { passive: false });
+
+// ---- スクロールバー(用紙±半分の範囲と現在の表示範囲を合わせた世界で表示) ----
+function scrollWorld() {
+  const paper = paperDimensions(state.doc.paper.size, state.doc.paper.orientation);
+  const v = state.view;
+  const spanX = v.canvasWidth / v.pxPerMm;
+  const spanY = v.canvasHeight / v.pxPerMm;
+  const mx = paper.width * 0.5;
+  const my = paper.height * 0.5;
+  return {
+    x0: Math.min(-mx, v.panX),
+    x1: Math.max(paper.width + mx, v.panX + spanX),
+    y0: Math.min(-my, v.panY),
+    y1: Math.max(paper.height + my, v.panY + spanY),
+    spanX, spanY,
+  };
+}
+function updateScrollbars() {
+  if (!state.view) return;
+  const w = scrollWorld();
+  const trackW = el('hscroll').clientWidth;
+  const thumbW = Math.max(24, (w.spanX / (w.x1 - w.x0)) * trackW);
+  const left = ((state.view.panX - w.x0) / (w.x1 - w.x0)) * trackW;
+  const ht = el('hthumb');
+  ht.style.width = `${thumbW}px`;
+  ht.style.left = `${Math.max(0, Math.min(left, trackW - thumbW))}px`;
+
+  const trackH = el('vscroll').clientHeight;
+  const thumbH = Math.max(24, (w.spanY / (w.y1 - w.y0)) * trackH);
+  const top = ((w.y1 - (state.view.panY + w.spanY)) / (w.y1 - w.y0)) * trackH;
+  const vth = el('vthumb');
+  vth.style.height = `${thumbH}px`;
+  vth.style.top = `${Math.max(0, Math.min(top, trackH - thumbH))}px`;
+}
+let sbDrag = null; // { axis, start, pan, mmPerPx }
+el('hthumb').addEventListener('pointerdown', (ev) => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const w = scrollWorld();
+  sbDrag = {
+    axis: 'x', start: ev.clientX, pan: state.view.panX,
+    mmPerPx: (w.x1 - w.x0) / el('hscroll').clientWidth,
+  };
+  try { ev.target.setPointerCapture(ev.pointerId); } catch { /* noop */ }
+});
+el('vthumb').addEventListener('pointerdown', (ev) => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const w = scrollWorld();
+  sbDrag = {
+    axis: 'y', start: ev.clientY, pan: state.view.panY,
+    mmPerPx: (w.y1 - w.y0) / el('vscroll').clientHeight,
+  };
+  try { ev.target.setPointerCapture(ev.pointerId); } catch { /* noop */ }
+});
+window.addEventListener('pointermove', (ev) => {
+  if (!sbDrag) return;
+  if (sbDrag.axis === 'x') {
+    state.view = { ...state.view, panX: sbDrag.pan + (ev.clientX - sbDrag.start) * sbDrag.mmPerPx };
+  } else {
+    state.view = { ...state.view, panY: sbDrag.pan - (ev.clientY - sbDrag.start) * sbDrag.mmPerPx };
+  }
+  render();
+});
+window.addEventListener('pointerup', () => { sbDrag = null; });
+// トラックの空き部分クリックでその位置へジャンプ
+el('hscroll').addEventListener('pointerdown', (ev) => {
+  if (ev.target !== el('hscroll')) return;
+  const w = scrollWorld();
+  const rect = el('hscroll').getBoundingClientRect();
+  const frac = (ev.clientX - rect.left) / rect.width;
+  const cx = w.x0 + frac * (w.x1 - w.x0);
+  state.view = { ...state.view, panX: cx - w.spanX / 2 };
+  render();
+});
+el('vscroll').addEventListener('pointerdown', (ev) => {
+  if (ev.target !== el('vscroll')) return;
+  const w = scrollWorld();
+  const rect = el('vscroll').getBoundingClientRect();
+  const frac = (ev.clientY - rect.top) / rect.height;
+  const cy = w.y1 - frac * (w.y1 - w.y0);
+  state.view = { ...state.view, panY: cy - w.spanY / 2 };
+  render();
+});
 
 function zoomCenter(factor) {
   state.view = vt.zoomAt(state.view, {
