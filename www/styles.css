@@ -30,6 +30,17 @@ input:disabled, select:disabled { opacity: 0.4; }
   border-bottom: 1px solid #000;
 }
 #canvas-wrap { flex: 1; min-height: 0; position: relative; }
+#hscroll, #vscroll {
+  position: absolute; z-index: 6; background: rgba(20, 22, 26, 0.55);
+}
+#hscroll { left: 0; right: 14px; bottom: 0; height: 13px; }
+#vscroll { top: 0; bottom: 14px; right: 0; width: 13px; }
+#hthumb, #vthumb {
+  position: absolute; background: #5f6a76; border-radius: 5px; cursor: grab;
+}
+#hthumb { top: 2px; height: 9px; min-width: 24px; }
+#vthumb { left: 2px; width: 9px; min-height: 24px; }
+#hthumb:hover, #vthumb:hover { background: #8494a5; }
 #text-entry {
   position: absolute; display: none; z-index: 5; min-width: 160px;
   background: #fff; color: #111; border: 2px solid #0b6bcb;
