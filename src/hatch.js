@@ -8,10 +8,21 @@ const DEG = Math.PI / 180;
 // 対象エンティティから境界を作る。ハッチング不可なら null
 export function boundaryFromEntity(e) {
   if (e.type === 'rect') {
+    if (e.rotation) {
+      // 回転矩形は4隅の多角形として扱う
+      const rot = (e.rotation * Math.PI) / 180;
+      const c = Math.cos(rot);
+      const s = Math.sin(rot);
+      const pt = (dx, dy) => [e.x + dx * c - dy * s, e.y + dx * s + dy * c];
+      return { kind: 'polyline', points: [pt(0, 0), pt(e.width, 0), pt(e.width, e.height), pt(0, e.height)] };
+    }
     return { kind: 'rect', x: e.x, y: e.y, width: e.width, height: e.height };
   }
   if (e.type === 'circle') return { kind: 'circle', cx: e.cx, cy: e.cy, r: e.r };
-  if (e.type === 'ellipse') return { kind: 'ellipse', cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry };
+  if (e.type === 'ellipse') {
+    if (e.rotation || e.startAngle != null) return null; // 回転楕円・楕円弧は未対応
+    return { kind: 'ellipse', cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry };
+  }
   if (e.type === 'polyline' && e.closed && e.points.length >= 3) {
     return { kind: 'polyline', points: e.points.map((p) => [...p]) };
   }

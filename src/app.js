@@ -6,6 +6,7 @@ import {
   createDocument, addEntity, removeEntities, translateEntities,
   duplicateEntities, parseScale, formatScale,
   rotate90Entities, entityBounds, hitTestEntity, STYLE_PRESETS,
+  polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment,
 } from './model.js';
 import { findSnap } from './snap.js';
 import { dimText } from './dims.js';
@@ -39,6 +40,7 @@ const state = {
   dirty: false,
   tool: 'select',
   selection: new Set(),
+  subSel: null, // 連続線/スプラインの選択中セグメント番号
   draft: null,
   gridSnap: true,
   osnap: true,
@@ -135,7 +137,7 @@ function render() {
   syncNumPanel();
 }
 
-// 単一選択された直線/円/円弧のプロパティを数値パネルへ反映(§7)
+// ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
 let lastPanelKey = null;
 const PANEL_EDITABLE = ['line', 'circle', 'arc', 'rect', 'ellipse', 'polyline', 'spline', 'text'];
 function selectedEditable() {
@@ -143,65 +145,115 @@ function selectedEditable() {
   const sel = state.doc.entities.find((e) => state.selection.has(e.id));
   return sel && PANEL_EDITABLE.includes(sel.type) ? sel : null;
 }
-// 選択種別ごとの欄の意味: [Xラベル, 長さ欄ラベル(null=無効), 角度欄ラベル(null=無効), 終了角の有無]
-const PANEL_MODES = {
-  line: ['始点X', '長さ', '角度', false],
-  circle: ['中心X', '直径', null, false],
-  arc: ['中心X', '半径', '開始角', true],
-  rect: ['左下X', '幅', '高さ', false],
-  ellipse: ['中心X', '半径X', '半径Y', false],
-  polyline: ['始点X', null, null, false],
-  spline: ['始点X', null, null, false],
-  text: ['位置X', null, null, false],
-};
-function setPanelLabels(mode) {
-  const [lx, llen, lang, ang2] = PANEL_MODES[mode] ?? PANEL_MODES.line;
-  el('lbl-x').textContent = lx;
-  el('lbl-len').textContent = llen ?? '長さ';
-  el('lbl-ang').textContent = lang ?? '角度';
-  el('num-len').disabled = llen === null;
-  el('num-ang').disabled = lang === null;
-  el('num-ang2-wrap').style.display = ang2 ? '' : 'none';
-}
-function panelBasePoint(sel) {
-  if (sel.type === 'line') return { x: sel.x1, y: sel.y1 };
-  if (sel.type === 'rect') return { x: sel.x, y: sel.y };
-  if (sel.type === 'text') return { x: sel.x, y: sel.y };
-  if (sel.type === 'polyline' || sel.type === 'spline') {
-    return { x: sel.points[0][0], y: sel.points[0][1] };
+const DRAW_FIELDS = [
+  { id: 'num-x', label: '始点X' },
+  { id: 'num-y', label: 'Y' },
+  { id: 'num-len', label: '長さ' },
+  { id: 'num-ang', label: '角度', value: '0' },
+];
+function buildFields(defs) {
+  const wrap = el('np-fields');
+  wrap.innerHTML = '';
+  for (const d of defs) {
+    const label = document.createElement('label');
+    const cap = document.createElement('span');
+    cap.textContent = d.label;
+    const input = document.createElement('input');
+    input.id = d.id;
+    input.size = 7;
+    input.value = d.value ?? '';
+    label.append(cap, input);
+    wrap.append(label);
   }
-  return { x: sel.cx, y: sel.cy }; // circle / arc / ellipse
+}
+// 選択エンティティのパネル定義(タイトルとフィールド)
+function editSchema(sel) {
+  const o = state.doc.userOrigin;
+  const F = (key, label, value) => ({ id: `np-${key}`, label, value });
+  const f2 = (v) => Number(v).toFixed(2);
+  const f1 = (v) => Number(v).toFixed(1);
+  if (sel.type === 'polyline' || sel.type === 'spline') {
+    const name = sel.type === 'polyline' ? '連続線' : 'スプライン';
+    if (state.subSel != null && state.subSel < polySegmentCount(sel)) {
+      const info = polySegmentInfo(sel, state.subSel);
+      return {
+        title: `${name} 線分${state.subSel + 1}/${polySegmentCount(sel)}:`,
+        fields: [
+          F('x', '始点X', f2(info.start.x - o.x)), F('y', 'Y', f2(info.start.y - o.y)),
+          F('len', '長さ', f2(info.len)), F('ang', '角度', f1(info.ang)),
+        ],
+      };
+    }
+    return {
+      title: `${name}(もう一度クリックで線分選択):`,
+      fields: [
+        F('x', '始点X', f2(sel.points[0][0] - o.x)),
+        F('y', 'Y', f2(sel.points[0][1] - o.y)),
+      ],
+    };
+  }
+  if (sel.type === 'line') {
+    const a = { x: sel.x1, y: sel.y1 };
+    const b = { x: sel.x2, y: sel.y2 };
+    return { title: '直線:', fields: [
+      F('x', '始点X', f2(a.x - o.x)), F('y', 'Y', f2(a.y - o.y)),
+      F('len', '長さ', f2(geo.distance(a, b))), F('ang', '角度', f1(geo.angleDegOf(a, b))),
+    ] };
+  }
+  if (sel.type === 'circle') {
+    return { title: '円:', fields: [
+      F('x', '中心X', f2(sel.cx - o.x)), F('y', 'Y', f2(sel.cy - o.y)),
+      F('dia', '直径', f2(sel.r * 2)),
+    ] };
+  }
+  if (sel.type === 'arc') {
+    return { title: '円弧:', fields: [
+      F('x', '中心X', f2(sel.cx - o.x)), F('y', 'Y', f2(sel.cy - o.y)),
+      F('r', '半径', f2(sel.r)),
+      F('start', '開始角', f1(sel.startAngle)), F('end', '終了角', f1(sel.endAngle)),
+    ] };
+  }
+  if (sel.type === 'rect') {
+    return { title: '矩形:', fields: [
+      F('x', '左下X', f2(sel.x - o.x)), F('y', 'Y', f2(sel.y - o.y)),
+      F('w', '幅', f2(sel.width)), F('h', '高さ', f2(sel.height)),
+      F('rot', '回転', f1(sel.rotation ?? 0)),
+    ] };
+  }
+  if (sel.type === 'ellipse') {
+    const fields = [
+      F('x', '中心X', f2(sel.cx - o.x)), F('y', 'Y', f2(sel.cy - o.y)),
+      F('rx', '半径X', f2(sel.rx)), F('ry', '半径Y', f2(sel.ry)),
+      F('rot', '回転', f1(sel.rotation ?? 0)),
+    ];
+    const isArc = sel.startAngle != null;
+    if (isArc) {
+      fields.push(F('start', '開始角', f1(sel.startAngle)), F('end', '終了角', f1(sel.endAngle)));
+    }
+    return { title: isArc ? '楕円弧:' : '楕円:', fields };
+  }
+  if (sel.type === 'text') {
+    return { title: '文字:', fields: [
+      F('x', '位置X', f2(sel.x - o.x)), F('y', 'Y', f2(sel.y - o.y)),
+      F('rot', '回転', f1(sel.rotation ?? 0)),
+    ] };
+  }
+  return null;
 }
 function syncNumPanel() {
-  const sel = selectedEditable();
-  const key = sel ? `${sel.type}:${sel.id}` : null;
+  const sel = state.tool === 'select' ? selectedEditable() : null;
+  const key = sel ? `${sel.type}:${sel.id}:${state.subSel ?? ''}` : `draw:${state.tool}`;
   if (key === lastPanelKey) return;
   lastPanelKey = key;
-  el('num-draw').textContent = sel ? '更新' : '作図';
-  setPanelLabels(sel?.type ?? 'line');
-  if (!sel) return;
-  const o = state.doc.userOrigin;
-  const base = panelBasePoint(sel);
-  el('num-x').value = (base.x - o.x).toFixed(2);
-  el('num-y').value = (base.y - o.y).toFixed(2);
-  if (sel.type === 'line') {
-    const b = { x: sel.x2, y: sel.y2 };
-    el('num-len').value = geo.distance(base, b).toFixed(2);
-    el('num-ang').value = geo.angleDegOf(base, b).toFixed(1);
-  } else if (sel.type === 'rect') {
-    el('num-len').value = sel.width.toFixed(2);
-    el('num-ang').value = sel.height.toFixed(2);
-  } else if (sel.type === 'ellipse') {
-    el('num-len').value = sel.rx.toFixed(2);
-    el('num-ang').value = sel.ry.toFixed(2);
-  } else if (sel.type === 'circle' || sel.type === 'arc') {
-    // 円は直径φ、円弧は半径Rで扱う(機械図面の慣例に合わせる)
-    el('num-len').value = (sel.type === 'circle' ? sel.r * 2 : sel.r).toFixed(2);
-    el('num-ang').value = sel.type === 'arc' ? sel.startAngle.toFixed(1) : '';
-    if (sel.type === 'arc') el('num-ang2').value = sel.endAngle.toFixed(1);
-  } else { // polyline / spline / text: 位置のみ
-    el('num-len').value = '';
-    el('num-ang').value = '';
+  if (sel) {
+    const schema = editSchema(sel);
+    el('np-title').textContent = schema.title;
+    buildFields(schema.fields);
+    el('num-draw').textContent = '更新';
+  } else {
+    el('np-title').textContent = '数値入力:';
+    buildFields(DRAW_FIELDS);
+    el('num-draw').textContent = '作図';
   }
 }
 function updateStatus() {
@@ -239,6 +291,7 @@ function commit(mutator) {
   pushSnapshot(state.history, snapshot(state.doc));
   mutator();
   markDirty();
+  lastPanelKey = null; // 数値パネルを最新値で再同期
   render();
 }
 
@@ -311,6 +364,7 @@ function setTool(tool) {
   state.tool = tool;
   state.draft = null;
   state.filletFirst = null;
+  state.subSel = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
   render();
@@ -429,12 +483,21 @@ function handleToolPointerDown(s, ev) {
     if (hit) {
       if (ev.shiftKey) {
         state.selection.has(hit.id) ? state.selection.delete(hit.id) : state.selection.add(hit.id);
+        state.subSel = null;
       } else if (!state.selection.has(hit.id)) {
         state.selection = new Set([hit.id]);
+        state.subSel = null;
+      } else if (state.selection.size === 1
+        && (hit.type === 'polyline' || hit.type === 'spline')) {
+        // 選択済みの連続線/スプラインをもう一度クリック → 最寄りの線分を選択
+        state.subSel = nearestPolySegment(hit, screenToReal(s));
       }
       state.moveDrag = { lastReal: p, snapshotPushed: false };
     } else {
-      if (!ev.shiftKey) state.selection.clear();
+      if (!ev.shiftKey) {
+        state.selection.clear();
+        state.subSel = null;
+      }
       state.draft = { kind: 'box', startScreen: s, currentScreen: s };
     }
     render();
@@ -515,6 +578,35 @@ function handleToolPointerDown(s, ev) {
           type: 'ellipse', cx: d.center.x, cy: d.center.y, rx, ry, ...styleProps(),
         }));
       }
+    }
+    render();
+  } else if (state.tool === 'earc') {
+    // 楕円弧: 中心 → コーナー(半径XY) → 開始点 → 終了点
+    const eparam = (d, q) => geo.round6(
+      (Math.atan2((q.y - d.center.y) / d.ry, (q.x - d.center.x) / d.rx) * 180) / Math.PI);
+    if (!state.draft) {
+      state.draft = { kind: 'earc', stage: 1, center: p, current: p };
+    } else if (state.draft.stage === 1) {
+      const rx = Math.abs(p.x - state.draft.center.x);
+      const ry = Math.abs(p.y - state.draft.center.y);
+      if (rx > 0 && ry > 0) {
+        state.draft.stage = 2;
+        state.draft.rx = rx;
+        state.draft.ry = ry;
+      }
+    } else if (state.draft.stage === 2) {
+      state.draft.stage = 3;
+      state.draft.startParam = eparam(state.draft, p);
+    } else {
+      const d = state.draft;
+      state.draft = null;
+      const start = d.startParam;
+      let end = eparam(d, p);
+      while (end <= start) end += 360;
+      commit(() => addEntity(state.doc, {
+        type: 'ellipse', cx: d.center.x, cy: d.center.y, rx: d.rx, ry: d.ry,
+        rotation: 0, startAngle: start, endAngle: geo.round6(end), ...styleProps(),
+      }));
     }
     render();
   } else if (state.tool === 'text') {
@@ -759,7 +851,9 @@ function handleToolPointerMove(s) {
 
 function handleToolPointerUp() {
   if (state.moveDrag) {
+    if (state.moveDrag.snapshotPushed) lastPanelKey = null; // ドラッグ移動後に値を更新
     state.moveDrag = null;
+    render();
     return;
   }
   if (state.draft?.kind === 'box') {
@@ -845,6 +939,7 @@ function doUndo() {
   if (!snap) return;
   applySnapshot(state.doc, snap);
   state.selection.clear();
+  state.subSel = null;
   markDirty();
   render();
 }
@@ -853,6 +948,7 @@ function doRedo() {
   if (!snap) return;
   applySnapshot(state.doc, snap);
   state.selection.clear();
+  state.subSel = null;
   markDirty();
   render();
 }
@@ -863,6 +959,7 @@ function deleteSelection() {
   if (state.selection.size === 0) return;
   commit(() => removeEntities(state.doc, [...state.selection]));
   state.selection.clear();
+  state.subSel = null;
   render();
 }
 function duplicateSelection() {
@@ -1011,87 +1108,109 @@ function drawLineFromInputs() {
 }
 // 選択中なら数値でプロパティを更新、未選択なら新規作図
 function applyNumPanel() {
-  const sel = selectedEditable();
+  const sel = state.tool === 'select' ? selectedEditable() : null;
   if (!sel) {
     drawLineFromInputs();
     return;
   }
-  const x = Number(el('num-x').value);
-  const y = Number(el('num-y').value);
-  const len = Number(el('num-len').value);
-  const ang = Number(el('num-ang').value);
-  if (![x, y].every(Number.isFinite)) return;
+  const v = (key) => Number(document.getElementById(`np-${key}`)?.value);
+  const x = v('x');
+  const y = v('y');
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   const p = originToAbs({ x, y });
   lastPanelKey = null; // 更新後の正規化値で再同期させる
 
-  if (sel.type === 'line') {
-    // 始点基準: 始点=入力座標、終点=長さ・角度から算出
-    if (!Number.isFinite(len) || len <= 0 || !Number.isFinite(ang)) return;
-    const end = geo.lineEndPoint(p, len, ang);
-    commit(() => {
-      sel.x1 = p.x; sel.y1 = p.y; sel.x2 = end.x; sel.y2 = end.y;
-    });
-  } else if (sel.type === 'rect') {
-    if (!(len > 0) || !(ang > 0)) return; // 幅・高さ
-    commit(() => {
-      sel.x = p.x; sel.y = p.y; sel.width = len; sel.height = ang;
-    });
-  } else if (sel.type === 'ellipse') {
-    if (!(len > 0) || !(ang > 0)) return; // 半径X・半径Y
-    commit(() => {
-      sel.cx = p.x; sel.cy = p.y; sel.rx = len; sel.ry = ang;
-    });
+  const normEnd = (start, end) => {
+    while (end <= start) end += 360;
+    return end;
+  };
+  if ((sel.type === 'polyline' || sel.type === 'spline') && state.subSel != null) {
+    // セグメント単位: 始点基準で終点側の頂点が動く
+    const len = v('len');
+    const ang = v('ang');
+    if (!(len > 0) || !Number.isFinite(ang)) return;
+    const i = state.subSel;
+    commit(() => setPolySegment(sel, i, p, len, ang));
   } else if (sel.type === 'polyline' || sel.type === 'spline') {
-    // 始点座標の指定で全体を平行移動(形状は維持)
     const dx = p.x - sel.points[0][0];
     const dy = p.y - sel.points[0][1];
     if (dx === 0 && dy === 0) return;
     commit(() => translateEntities(state.doc, [sel.id], dx, dy));
-  } else if (sel.type === 'text') {
-    commit(() => { sel.x = p.x; sel.y = p.y; });
-  } else if (sel.type === 'circle' || sel.type === 'arc') {
-    if (!(len > 0)) return;
+  } else if (sel.type === 'line') {
+    const len = v('len');
+    const ang = v('ang');
+    if (!(len > 0) || !Number.isFinite(ang)) return;
+    const end = geo.lineEndPoint(p, len, ang);
+    commit(() => {
+      sel.x1 = p.x; sel.y1 = p.y; sel.x2 = end.x; sel.y2 = end.y;
+    });
+  } else if (sel.type === 'circle') {
+    const dia = v('dia');
+    if (!(dia > 0)) return;
+    commit(() => { sel.cx = p.x; sel.cy = p.y; sel.r = dia / 2; });
+  } else if (sel.type === 'arc') {
+    const r = v('r');
+    const start = v('start');
+    let end = v('end');
+    if (!(r > 0) || !Number.isFinite(start) || !Number.isFinite(end)) return;
+    end = normEnd(start, end);
+    commit(() => {
+      sel.cx = p.x; sel.cy = p.y; sel.r = r;
+      sel.startAngle = start; sel.endAngle = end;
+    });
+  } else if (sel.type === 'rect') {
+    const w = v('w');
+    const h = v('h');
+    const rot = v('rot');
+    if (!(w > 0) || !(h > 0) || !Number.isFinite(rot)) return;
+    commit(() => {
+      sel.x = p.x; sel.y = p.y; sel.width = w; sel.height = h; sel.rotation = rot;
+    });
+  } else if (sel.type === 'ellipse') {
+    const rx = v('rx');
+    const ry = v('ry');
+    const rot = v('rot');
+    if (!(rx > 0) || !(ry > 0) || !Number.isFinite(rot)) return;
+    const isArc = sel.startAngle != null;
+    let start = null;
     let end = null;
-    if (sel.type === 'arc') {
-      if (!Number.isFinite(ang)) return;
-      end = Number(el('num-ang2').value);
-      if (!Number.isFinite(end)) return;
-      while (end <= ang) end += 360;
+    if (isArc) {
+      start = v('start');
+      end = v('end');
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+      end = normEnd(start, end);
     }
     commit(() => {
-      sel.cx = p.x; sel.cy = p.y;
-      sel.r = sel.type === 'circle' ? len / 2 : len; // 円は直径入力
-      if (sel.type === 'arc') {
-        sel.startAngle = ang;
-        sel.endAngle = end;
-      }
+      sel.cx = p.x; sel.cy = p.y; sel.rx = rx; sel.ry = ry; sel.rotation = rot;
+      if (isArc) { sel.startAngle = start; sel.endAngle = end; }
     });
+  } else if (sel.type === 'text') {
+    const rot = v('rot');
+    if (!Number.isFinite(rot)) return;
+    commit(() => { sel.x = p.x; sel.y = p.y; sel.rotation = rot; });
   }
 }
 el('num-draw').addEventListener('click', applyNumPanel);
 
 // どの欄でも Enter で反映。直線ドラフト中はその数値で確定。
 // 選択要素の編集中は、欄からフォーカスが外れた時(change)にも自動反映する。
-for (const id of ['num-x', 'num-y', 'num-len', 'num-ang', 'num-ang2']) {
-  el(id).addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Enter') return;
-    if (state.draft?.kind === 'line') {
-      const len = Number(el('num-len').value);
-      const ang = Number(el('num-ang').value);
-      if (Number.isFinite(len) && len > 0 && Number.isFinite(ang)) {
-        commitLine(state.draft.start, geo.lineEndPoint(state.draft.start, len, ang));
-        state.draft = null;
-        render();
-      }
-    } else {
-      applyNumPanel();
+el('np-fields').addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  if (state.draft?.kind === 'line') {
+    const len = Number(document.getElementById('num-len')?.value);
+    const ang = Number(document.getElementById('num-ang')?.value);
+    if (Number.isFinite(len) && len > 0 && Number.isFinite(ang)) {
+      commitLine(state.draft.start, geo.lineEndPoint(state.draft.start, len, ang));
+      state.draft = null;
+      render();
     }
-  });
-  el(id).addEventListener('change', () => {
-    // 新規作図モードでは勝手に描かない。選択編集中のみ自動反映
-    if (selectedEditable()) applyNumPanel();
-  });
-}
+  } else {
+    applyNumPanel();
+  }
+});
+el('np-fields').addEventListener('change', () => {
+  if (state.tool === 'select' && selectedEditable()) applyNumPanel();
+});
 
 // ---- 設定UI ----
 function syncSettingsUI() {
@@ -1307,6 +1426,7 @@ window.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     state.draft = null;
     state.selection.clear();
+    state.subSel = null;
     closeTextEntry();
     render();
     return;

@@ -208,15 +208,21 @@ export function offsetEntity(e, dist, sidePoint) {
     return props;
   }
   if (e.type === 'rect') {
-    const inside = sidePoint.x > e.x && sidePoint.x < e.x + e.width &&
-                   sidePoint.y > e.y && sidePoint.y < e.y + e.height;
+    // 回転矩形にも対応: ローカル座標で内外判定し、ローカル系で膨張/収縮する
+    const rot = ((e.rotation ?? 0) * Math.PI) / 180;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const lx = (sidePoint.x - e.x) * c + (sidePoint.y - e.y) * s;
+    const ly = -(sidePoint.x - e.x) * s + (sidePoint.y - e.y) * c;
+    const inside = lx > 0 && lx < e.width && ly > 0 && ly < e.height;
     const d = inside ? -dist : dist;
     const width = e.width + d * 2;
     const height = e.height + d * 2;
     if (width <= 0 || height <= 0) return null;
     return {
       type: 'rect', layer: e.layer, lineType: e.lineType,
-      x: round6(e.x - d), y: round6(e.y - d), width: round6(width), height: round6(height),
+      x: round6(e.x - d * c + d * s), y: round6(e.y - d * s - d * c),
+      width: round6(width), height: round6(height), rotation: e.rotation ?? 0,
     };
   }
   return null;

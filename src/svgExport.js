@@ -1,7 +1,7 @@
 // SVGエクスポート(一次出力形式)。用紙実寸mmで出力する。
 // 印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
 import { paperDimensions, frameRect } from './papers.js';
-import { LINE_STYLES, entitySegments } from './model.js';
+import { LINE_STYLES, entitySegments, ellipsePoint, isEllipseArc } from './model.js';
 import {
   dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout, annotationLayout,
 } from './dims.js';
@@ -72,6 +72,10 @@ function entityToSVG(e, doc, k, X, Y) {
     return `<line x1="${X(e.x1)}" y1="${Y(e.y1)}" x2="${X(e.x2)}" y2="${Y(e.y2)}" ${strokeAttrs(e)}/>`;
   }
   if (e.type === 'rect') {
+    if (e.rotation) {
+      const pts = entitySegments(e).map(([a]) => `${X(a.x)},${Y(a.y)}`).join(' ');
+      return `<polygon points="${pts}" ${strokeAttrs(e)}/>`;
+    }
     return `<rect x="${X(e.x)}" y="${Y(e.y + e.height)}" width="${r2(e.width * k)}" height="${r2(e.height * k)}" ${strokeAttrs(e)}/>`;
   }
   if (e.type === 'polyline') {
@@ -83,7 +87,17 @@ function entityToSVG(e, doc, k, X, Y) {
     return `<circle cx="${X(e.cx)}" cy="${Y(e.cy)}" r="${r2(e.r * k)}" ${strokeAttrs(e)}/>`;
   }
   if (e.type === 'ellipse') {
-    return `<ellipse cx="${X(e.cx)}" cy="${Y(e.cy)}" rx="${r2(e.rx * k)}" ry="${r2(e.ry * k)}" ${strokeAttrs(e)}/>`;
+    const rot = e.rotation ?? 0;
+    if (isEllipseArc(e)) {
+      const a = ellipsePoint(e, e.startAngle);
+      const b = ellipsePoint(e, e.endAngle);
+      let sweep = e.endAngle - e.startAngle;
+      while (sweep < 0) sweep += 360;
+      const large = sweep > 180 ? 1 : 0;
+      return `<path d="M ${X(a.x)} ${Y(a.y)} A ${r2(e.rx * k)} ${r2(e.ry * k)} ${r2(-rot)} ${large} 0 ${X(b.x)} ${Y(b.y)}" ${strokeAttrs(e)}/>`;
+    }
+    const tr = rot ? ` transform="rotate(${r2(-rot)} ${X(e.cx)} ${Y(e.cy)})"` : '';
+    return `<ellipse cx="${X(e.cx)}" cy="${Y(e.cy)}" rx="${r2(e.rx * k)}" ry="${r2(e.ry * k)}" ${strokeAttrs(e)}${tr}/>`;
   }
   if (e.type === 'arc') {
     let sweep = e.endAngle - e.startAngle;
@@ -98,7 +112,8 @@ function entityToSVG(e, doc, k, X, Y) {
     return `<path d="M ${sx} ${sy} A ${rp} ${rp} 0 ${large} 0 ${ex} ${ey}" ${strokeAttrs(e)}/>`;
   }
   if (e.type === 'text') {
-    return `<text x="${X(e.x)}" y="${Y(e.y)}" font-size="${e.height}" fill="black">${esc(e.content)}</text>`;
+    const tr = e.rotation ? ` transform="rotate(${r2(-e.rotation)} ${X(e.x)} ${Y(e.y)})"` : '';
+    return `<text x="${X(e.x)}" y="${Y(e.y)}" font-size="${e.height}" fill="black"${tr}>${esc(e.content)}</text>`;
   }
   if (e.type === 'hatch') {
     return hatchSegments(e.boundary, e.angleDeg, e.spacingMm / k)

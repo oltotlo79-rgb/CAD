@@ -1,6 +1,7 @@
 import { FRAME_MARGIN_MM } from './papers.js';
 import {
   distance, angleDegOf, distancePointToSegment, rotate90Point, catmullRomPoints,
+  lineEndPoint,
 } from './geometry.js';
 import {
   dimLayout, DIM_TEXT_MM, balloonLayout, BALLOON_R_MM, annotationLayout,
@@ -123,9 +124,10 @@ export function rotate90Entities(doc, ids, center) {
       const p2 = rotate90Point({ x: e.x2, y: e.y2 }, center);
       e.x1 = p1.x; e.y1 = p1.y; e.x2 = p2.x; e.y2 = p2.y;
     } else if (e.type === 'rect') {
-      const c = rotate90Point({ x: e.x + e.width / 2, y: e.y + e.height / 2 }, center);
-      const w = e.height, h = e.width;
-      e.x = c.x - w / 2; e.y = c.y - h / 2; e.width = w; e.height = h;
+      // 剛体回転: 左下角を回して rotation を+90
+      const p = rotate90Point({ x: e.x, y: e.y }, center);
+      e.x = p.x; e.y = p.y;
+      e.rotation = ((e.rotation ?? 0) + 90) % 360;
     } else if (e.type === 'polyline' || e.type === 'spline') {
       e.points = e.points.map(([x, y]) => {
         const p = rotate90Point({ x, y }, center);
@@ -144,10 +146,11 @@ export function rotate90Entities(doc, ids, center) {
     } else if (e.type === 'ellipse') {
       const c = rotate90Point({ x: e.cx, y: e.cy }, center);
       e.cx = c.x; e.cy = c.y;
-      const rx = e.ry; e.ry = e.rx; e.rx = rx;
+      e.rotation = ((e.rotation ?? 0) + 90) % 360;
     } else if (e.type === 'text') {
       const p = rotate90Point({ x: e.x, y: e.y }, center);
       e.x = p.x; e.y = p.y;
+      e.rotation = ((e.rotation ?? 0) + 90) % 360;
     } else if (e.type === 'balloon') {
       const a = rotate90Point({ x: e.at[0], y: e.at[1] }, center);
       const q = rotate90Point({ x: e.pos[0], y: e.pos[1] }, center);
@@ -192,12 +195,12 @@ export function entitySegments(e) {
     return [[{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]];
   }
   if (e.type === 'rect') {
-    const p = [
-      { x: e.x, y: e.y },
-      { x: e.x + e.width, y: e.y },
-      { x: e.x + e.width, y: e.y + e.height },
-      { x: e.x, y: e.y + e.height },
-    ];
+    // rotation は左下角(x,y)を中心とした回転
+    const rot = ((e.rotation ?? 0) * Math.PI) / 180;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const pt = (dx, dy) => ({ x: e.x + dx * c - dy * s, y: e.y + dx * s + dy * c });
+    const p = [pt(0, 0), pt(e.width, 0), pt(e.width, e.height), pt(0, e.height)];
     return [[p[0], p[1]], [p[1], p[2]], [p[2], p[3]], [p[3], p[0]]];
   }
   if (e.type === 'polyline') {
@@ -232,9 +235,17 @@ export function mirrorEntities(doc, ids, axis, center) {
       [e.x1, e.y1] = mp(e.x1, e.y1);
       [e.x2, e.y2] = mp(e.x2, e.y2);
     } else if (e.type === 'rect') {
-      const [nx, ny] = mp(e.x, e.y);
-      e.x = axis === 'x' ? nx - e.width : nx;
-      e.y = axis === 'y' ? ny - e.height : ny;
+      // 中心を鏡映し、回転角を反転(矩形は180°対称なので180-θ/-θで正しく写る)
+      const rot0 = e.rotation ?? 0;
+      const rad0 = rot0 * DEG;
+      const cx0 = e.x + (e.width / 2) * Math.cos(rad0) - (e.height / 2) * Math.sin(rad0);
+      const cy0 = e.y + (e.width / 2) * Math.sin(rad0) + (e.height / 2) * Math.cos(rad0);
+      const [ncx, ncy] = mp(cx0, cy0);
+      const rot = (((axis === 'x' ? 180 - rot0 : -rot0) % 360) + 360) % 360;
+      const rad = rot * DEG;
+      e.x = ncx - (e.width / 2) * Math.cos(rad) + (e.height / 2) * Math.sin(rad);
+      e.y = ncy - (e.width / 2) * Math.sin(rad) - (e.height / 2) * Math.cos(rad);
+      e.rotation = rot;
     } else if (e.type === 'polyline' || e.type === 'spline') {
       e.points = e.points.map(([x, y]) => mp(x, y));
     } else if (e.type === 'roughness' || e.type === 'fcf') {
@@ -246,6 +257,12 @@ export function mirrorEntities(doc, ids, axis, center) {
       [e.startAngle, e.endAngle] = mAngles(e.startAngle, e.endAngle);
     } else if (e.type === 'ellipse') {
       [e.cx, e.cy] = mp(e.cx, e.cy);
+      const rot0 = e.rotation ?? 0;
+      e.rotation = (((axis === 'x' ? 180 - rot0 : -rot0) % 360) + 360) % 360;
+      if (isEllipseArc(e)) {
+        // 鏡映でパラメータは u→-u(向き維持のため入替)
+        [e.startAngle, e.endAngle] = [-e.endAngle || 0, -e.startAngle || 0];
+      }
     } else if (e.type === 'text') {
       [e.x, e.y] = mp(e.x, e.y);
     } else if (e.type === 'dim') {
@@ -288,6 +305,60 @@ export function mirrorEntities(doc, ids, axis, center) {
 
 const DEG = Math.PI / 180;
 
+// ---- 楕円(回転・楕円弧対応)のヘルパー ----
+export function isEllipseArc(e) {
+  return e.startAngle != null && e.endAngle != null;
+}
+// 点pを楕円のローカル座標(回転前)へ
+function ellipseLocal(e, p) {
+  const rot = (e.rotation ?? 0) * DEG;
+  const dx = p.x - e.cx;
+  const dy = p.y - e.cy;
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  return { x: dx * c + dy * s, y: -dx * s + dy * c };
+}
+// パラメータ角(度)の楕円上の点(回転込み)
+export function ellipsePoint(e, paramDeg) {
+  const rot = (e.rotation ?? 0) * DEG;
+  const u = paramDeg * DEG;
+  const lx = e.rx * Math.cos(u);
+  const ly = e.ry * Math.sin(u);
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  return { x: e.cx + lx * c - ly * s, y: e.cy + lx * s + ly * c };
+}
+
+// ---- 連続線/スプラインのセグメント編集 ----
+export function polySegmentCount(e) {
+  return e.closed ? e.points.length : e.points.length - 1;
+}
+export function polySegmentInfo(e, i) {
+  const n = e.points.length;
+  const start = { x: e.points[i][0], y: e.points[i][1] };
+  const end = { x: e.points[(i + 1) % n][0], y: e.points[(i + 1) % n][1] };
+  return { start, len: distance(start, end), ang: angleDegOf(start, end) };
+}
+// セグメントiを 始点+長さ+角度 で更新(始点基準: 終点側の頂点が動く)
+export function setPolySegment(e, i, start, len, ang) {
+  const n = e.points.length;
+  const end = lineEndPoint(start, len, ang);
+  e.points[i] = [start.x, start.y];
+  e.points[(i + 1) % n] = [end.x, end.y];
+}
+export function nearestPolySegment(e, p) {
+  let best = 0;
+  let bestD = Infinity;
+  const n = e.points.length;
+  for (let i = 0; i < polySegmentCount(e); i++) {
+    const a = { x: e.points[i][0], y: e.points[i][1] };
+    const b = { x: e.points[(i + 1) % n][0], y: e.points[(i + 1) % n][1] };
+    const d = distancePointToSegment(p, a, b);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
 // オブジェクトスナップの候補点(端点・中点・中心・四半点)
 export function entitySnapPoints(e) {
   const pts = [];
@@ -317,8 +388,17 @@ export function entitySnapPoints(e) {
     push(e.cx + e.r * Math.cos(e.endAngle * DEG), e.cy + e.r * Math.sin(e.endAngle * DEG), 'end');
   } else if (e.type === 'ellipse') {
     push(e.cx, e.cy, 'center');
-    push(e.cx + e.rx, e.cy, 'quad'); push(e.cx - e.rx, e.cy, 'quad');
-    push(e.cx, e.cy + e.ry, 'quad'); push(e.cx, e.cy - e.ry, 'quad');
+    if (isEllipseArc(e)) {
+      const a = ellipsePoint(e, e.startAngle);
+      const b = ellipsePoint(e, e.endAngle);
+      push(a.x, a.y, 'end');
+      push(b.x, b.y, 'end');
+    } else {
+      for (const u of [0, 90, 180, 270]) {
+        const q = ellipsePoint(e, u);
+        push(q.x, q.y, 'quad');
+      }
+    }
   } else if (e.type === 'text') {
     push(e.x, e.y, 'end');
   }
@@ -352,7 +432,13 @@ export function entityBounds(e, k = 1) {
     return { minX: e.cx - e.r, minY: e.cy - e.r, maxX: e.cx + e.r, maxY: e.cy + e.r };
   }
   if (e.type === 'ellipse') {
-    return { minX: e.cx - e.rx, minY: e.cy - e.ry, maxX: e.cx + e.rx, maxY: e.cy + e.ry };
+    // 回転楕円の正確な軸平行バウンディング
+    const rot = (e.rotation ?? 0) * DEG;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const dx = Math.hypot(e.rx * c, e.ry * s);
+    const dy = Math.hypot(e.rx * s, e.ry * c);
+    return { minX: e.cx - dx, minY: e.cy - dy, maxX: e.cx + dx, maxY: e.cy + dy };
   }
   if (e.type === 'text') {
     const h = e.height / k;
@@ -414,8 +500,15 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
   }
   if (e.type === 'ellipse') {
     if (e.rx <= 0 || e.ry <= 0) return false;
-    const t = Math.hypot((p.x - e.cx) / e.rx, (p.y - e.cy) / e.ry);
-    return Math.abs(t - 1) * Math.min(e.rx, e.ry) <= tolMm;
+    const l = ellipseLocal(e, p);
+    const t = Math.hypot(l.x / e.rx, l.y / e.ry);
+    if (Math.abs(t - 1) * Math.min(e.rx, e.ry) > tolMm) return false;
+    if (!isEllipseArc(e)) return true;
+    let sweep = e.endAngle - e.startAngle;
+    while (sweep < 0) sweep += 360;
+    let rel = Math.atan2(l.y / e.ry, l.x / e.rx) / DEG - e.startAngle;
+    while (rel < 0) rel += 360;
+    return rel <= sweep + 1e-9;
   }
   if (e.type === 'text') {
     const b = entityBounds(e, k);
