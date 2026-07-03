@@ -384,17 +384,20 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 // ---- パン・ズーム ----
-// 通常スクロール=パン(上下、チルト/トラックパッドで左右)、Shift/Ctrl+スクロール=拡大縮小
-// (Ctrl+ホイールはトラックパッドのピンチ操作でも発生する)
+// スクロール=上下パン / Shift+スクロール=左右パン / Ctrl+スクロール=拡大縮小
+// (Excelと同じ操作系。Ctrl+ホイールはトラックパッドのピンチでも発生する)
 canvas.addEventListener('wheel', (ev) => {
   ev.preventDefault();
-  if (ev.shiftKey || ev.ctrlKey) {
-    // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
+  const z = state.view.pxPerMm;
+  if (ev.ctrlKey) {
     const dy = ev.deltaY !== 0 ? ev.deltaY : ev.deltaX;
     const factor = dy < 0 ? 1.2 : 1 / 1.2;
     state.view = vt.zoomAt(state.view, eventScreen(ev), factor);
+  } else if (ev.shiftKey) {
+    // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
+    const dx = ev.deltaX !== 0 ? ev.deltaX : ev.deltaY;
+    state.view = { ...state.view, panX: state.view.panX + dx / z };
   } else {
-    const z = state.view.pxPerMm;
     state.view = {
       ...state.view,
       panX: state.view.panX + ev.deltaX / z,
