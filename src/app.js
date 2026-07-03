@@ -7,6 +7,7 @@ import {
   duplicateEntities, parseScale, formatScale,
   rotate90Entities, entityBounds, hitTestEntity, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment,
+  entitySegments,
 } from './model.js';
 import { findSnap } from './snap.js';
 import { dimText } from './dims.js';
@@ -54,8 +55,20 @@ const state = {
   filletFirst: null, // フィレット1本目 { line, click }
   copyDrag: null,  // 右ドラッグ複製 { ids, startReal, current, bounds }
   clipboard: null, // Ctrl+C の内部クリップボード(エンティティのプロパティ配列)
+  offsetPick: null, // オフセット1段階目で選んだ対象
+  message: null,   // ステータスバーの操作ガイド
   mouseReal: null,
 };
+let messageTimer = null;
+function showMessage(text) {
+  state.message = text;
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => {
+    state.message = null;
+    updateStatus();
+  }, 5000);
+  updateStatus();
+}
 
 // ---- 座標ヘルパー ----
 function eventScreen(ev) {
@@ -262,8 +275,9 @@ function updateStatus() {
   const pos = m ? `X:${(m.x - o.x).toFixed(2)}  Y:${(m.y - o.y).toFixed(2)}` : 'X:--  Y:--';
   const step = currentGridStep();
   const grid = step ? `グリッド:${step}mm${state.doc.grid.mode === 'manual' ? '(手動)' : ''}` : 'グリッド:--';
+  const msg = state.message ? `【${state.message}】   ` : '';
   el('statusbar').textContent =
-    `${pos}   ${grid}   縮尺 ${formatScale(state.doc.scale.ratio)}   表示 ${state.view.pxPerMm.toFixed(1)}px/mm   要素 ${state.doc.entities.length}`;
+    `${msg}${pos}   ${grid}   縮尺 ${formatScale(state.doc.scale.ratio)}   表示 ${state.view.pxPerMm.toFixed(1)}px/mm   要素 ${state.doc.entities.length}`;
 }
 function updateTitle() {
   document.title = `${state.dirty ? '* ' : ''}${state.fileName} - 製図ツール`;
@@ -364,6 +378,7 @@ function setTool(tool) {
   state.tool = tool;
   state.draft = null;
   state.filletFirst = null;
+  state.offsetPick = null;
   state.subSel = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
@@ -664,18 +679,26 @@ function handleToolPointerDown(s, ev) {
     }
     render();
   } else if (state.tool === 'fillet' || state.tool === 'chamferEdit') {
+    const toolName = state.tool === 'fillet' ? 'フィレット' : '面取り';
     const hit = hitTestScreen(s);
-    if (hit && hit.type === 'line') {
+    if (!hit) {
+      showMessage(`${toolName}: 1本目の直線をクリックしてください`);
+    } else if (hit.type !== 'line') {
+      showMessage(`${toolName}: 対象は直線のみです(矩形・連続線は先に「分解」)`);
+    } else {
       if (!state.filletFirst) {
         state.filletFirst = { line: hit, click: screenToReal(s) };
         state.selection = new Set([hit.id]);
+        showMessage(`${toolName}: 2本目の直線をクリックしてください`);
         render();
       } else if (hit.id !== state.filletFirst.line.id) {
         const r = Number(el('fillet-r').value);
         const first = state.filletFirst;
         state.filletFirst = null;
         state.selection.clear();
-        if (Number.isFinite(r) && r > 0) {
+        if (!(r > 0)) {
+          showMessage(`${toolName}: サイズ(mm)を正の数で入力してください`);
+        } else {
           const style = { layer: first.line.layer, lineType: first.line.lineType };
           if (state.tool === 'fillet') {
             const f = filletLines(first.line, first.click, hit, screenToReal(s), r);
@@ -685,6 +708,8 @@ function handleToolPointerDown(s, ev) {
                 Object.assign(hit, f.l2);
                 addEntity(state.doc, { type: 'arc', ...f.arc, ...style });
               });
+            } else {
+              showMessage('フィレット: 平行な直線同士には適用できません');
             }
           } else {
             const c = chamferLines(first.line, first.click, hit, screenToReal(s), r);
@@ -694,6 +719,8 @@ function handleToolPointerDown(s, ev) {
                 Object.assign(hit, c.l2);
                 addEntity(state.doc, { type: 'line', ...c.line, ...style });
               });
+            } else {
+              showMessage('面取り: 平行な直線同士には適用できません');
             }
           }
         }
@@ -777,7 +804,11 @@ function handleToolPointerDown(s, ev) {
     setTool('select');
   } else if (state.tool === 'trim') {
     const hit = hitTestScreen(s);
-    if (hit && hit.type === 'line') {
+    if (!hit) {
+      showMessage('トリム: 削除したい区間の直線上をクリックしてください');
+    } else if (hit.type !== 'line') {
+      showMessage('トリム: 対象は直線のみです(矩形・連続線は先に「分解」)');
+    } else {
       const others = state.doc.entities.filter((en) => en.id !== hit.id);
       const pieces = trimLine(hit, screenToReal(s), others);
       if (pieces) {
@@ -785,25 +816,55 @@ function handleToolPointerDown(s, ev) {
           removeEntities(state.doc, [hit.id]);
           for (const piece of pieces) addEntity(state.doc, piece);
         });
+      } else {
+        showMessage('トリム: 他の要素との交点がありません');
       }
     }
   } else if (state.tool === 'extend') {
     const hit = hitTestScreen(s);
-    if (hit && hit.type === 'line') {
+    if (!hit) {
+      showMessage('延長: 伸ばしたい側の直線上をクリックしてください');
+    } else if (hit.type !== 'line') {
+      showMessage('延長: 対象は直線のみです(矩形・連続線は先に「分解」)');
+    } else {
       const others = state.doc.entities.filter((en) => en.id !== hit.id);
       const next = extendLine(hit, screenToReal(s), others);
       if (next) {
         commit(() => Object.assign(hit, next));
+      } else {
+        showMessage('延長: 延長方向に他の要素がありません');
       }
     }
   } else if (state.tool === 'offset') {
-    const hit = hitTestScreen(s);
-    if (hit) {
-      const dist = Number(el('offset-dist').value);
-      if (Number.isFinite(dist) && dist > 0) {
-        const props = offsetEntity(hit, dist, screenToReal(s));
-        if (props) commit(() => addEntity(state.doc, props));
+    // 2段階: ①対象をクリック → ②ずらす側をクリック(上下左右どこでも)
+    if (!state.offsetPick) {
+      const hit = hitTestScreen(s);
+      if (!hit) {
+        showMessage('オフセット: 対象(直線/円/円弧/矩形)をクリックしてください');
+      } else if (!['line', 'circle', 'arc', 'rect'].includes(hit.type)) {
+        showMessage('オフセット: 直線・円・円弧・矩形が対象です');
+      } else {
+        state.offsetPick = hit;
+        state.selection = new Set([hit.id]);
+        showMessage('オフセット: ずらす側をクリックしてください');
+        render();
       }
+    } else {
+      const target = state.offsetPick;
+      state.offsetPick = null;
+      state.selection.clear();
+      const dist = Number(el('offset-dist').value);
+      if (!(dist > 0)) {
+        showMessage('オフセット: 距離(mm)を正の数で入力してください');
+      } else {
+        const props = offsetEntity(target, dist, screenToReal(s));
+        if (props) {
+          commit(() => addEntity(state.doc, props));
+        } else {
+          showMessage('オフセット: この距離では作れません(内側に距離が大きすぎる等)');
+        }
+      }
+      render();
     }
   } else if (state.tool === 'mirror45') {
     state.doc.mirror45 = p;
@@ -1033,6 +1094,33 @@ function mirrorSelection(axis) {
 }
 el('mirror-x').addEventListener('click', () => mirrorSelection('x'));
 el('mirror-y').addEventListener('click', () => mirrorSelection('y'));
+
+// 矩形・連続線を個別の直線に分解(トリム/フィレット/面取りの前処理に使う)
+function explodeSelection() {
+  const targets = state.doc.entities.filter((e) =>
+    state.selection.has(e.id) && (e.type === 'rect' || e.type === 'polyline'));
+  if (targets.length === 0) {
+    showMessage('分解: 矩形または連続線を選択してから押してください');
+    return;
+  }
+  const ids = [];
+  commit(() => {
+    for (const e of targets) {
+      for (const [a, b] of entitySegments(e)) {
+        ids.push(addEntity(state.doc, {
+          type: 'line', layer: e.layer, lineType: e.lineType,
+          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+        }).id);
+      }
+    }
+    removeEntities(state.doc, targets.map((e) => e.id));
+  });
+  state.selection = new Set(ids);
+  state.subSel = null;
+  showMessage(`分解: ${targets.length}個の図形を${ids.length}本の直線にしました`);
+  render();
+}
+el('explode').addEventListener('click', explodeSelection);
 
 // ---- 文字入力オーバーレイ(注記/引出線/寸法値編集で共用) ----
 const textEntry = el('text-entry');
@@ -1427,6 +1515,8 @@ window.addEventListener('keydown', (ev) => {
     state.draft = null;
     state.selection.clear();
     state.subSel = null;
+    state.filletFirst = null;
+    state.offsetPick = null;
     closeTextEntry();
     render();
     return;
