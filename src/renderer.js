@@ -55,7 +55,22 @@ export function draw(ctx, state) {
   drawEntities(ctx, doc, view, selection, k);
   drawOrigin(ctx, doc, view);
   if (draft) drawDraft(ctx, doc, view, draft);
+  if (state.copyDrag) drawCopyGhost(ctx, doc, view, state.copyDrag);
   if (state.snapHint) drawSnapHint(ctx, doc, view, state.snapHint);
+}
+
+// 右ドラッグ複製の移動先プレビュー(破線の枠)
+function drawCopyGhost(ctx, doc, view, d) {
+  const dx = d.current.x - d.startReal.x;
+  const dy = d.current.y - d.startReal.y;
+  const tl = realToScreen({ x: d.bounds.minX + dx, y: d.bounds.maxY + dy }, doc, view);
+  const br = realToScreen({ x: d.bounds.maxX + dx, y: d.bounds.minY + dy }, doc, view);
+  ctx.save();
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = COLORS.draft;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+  ctx.restore();
 }
 
 function drawGrid(ctx, doc, view, frame, k) {

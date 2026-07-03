@@ -50,6 +50,8 @@ const state = {
   panDrag: null,   // { startScreen, startPanX, startPanY }
   moveDrag: null,  // { lastReal, snapshotPushed }
   filletFirst: null, // フィレット1本目 { line, click }
+  copyDrag: null,  // 右ドラッグ複製 { ids, startReal, current, bounds }
+  clipboard: null, // Ctrl+C の内部クリップボード(エンティティのプロパティ配列)
   mouseReal: null,
 };
 
@@ -144,7 +146,7 @@ function selectedEditable() {
 // 選択種別ごとの欄の意味: [Xラベル, 長さ欄ラベル(null=無効), 角度欄ラベル(null=無効), 終了角の有無]
 const PANEL_MODES = {
   line: ['始点X', '長さ', '角度', false],
-  circle: ['中心X', '半径', null, false],
+  circle: ['中心X', '直径', null, false],
   arc: ['中心X', '半径', '開始角', true],
   rect: ['左下X', '幅', '高さ', false],
   ellipse: ['中心X', '半径X', '半径Y', false],
@@ -193,7 +195,8 @@ function syncNumPanel() {
     el('num-len').value = sel.rx.toFixed(2);
     el('num-ang').value = sel.ry.toFixed(2);
   } else if (sel.type === 'circle' || sel.type === 'arc') {
-    el('num-len').value = sel.r.toFixed(2);
+    // 円は直径φ、円弧は半径Rで扱う(機械図面の慣例に合わせる)
+    el('num-len').value = (sel.type === 'circle' ? sel.r * 2 : sel.r).toFixed(2);
     el('num-ang').value = sel.type === 'arc' ? sel.startAngle.toFixed(1) : '';
     if (sel.type === 'arc') el('num-ang2').value = sel.endAngle.toFixed(1);
   } else { // polyline / spline / text: 位置のみ
@@ -767,11 +770,26 @@ function handleToolPointerUp() {
 }
 
 // ---- ポインタイベント ----
+canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
 canvas.addEventListener('pointerdown', (ev) => {
   const s = eventScreen(ev);
   try { canvas.setPointerCapture(ev.pointerId); } catch { /* 合成イベント等 */ }
   if (ev.button === 1 || state.spaceDown) {
     startPan(s);
+    return;
+  }
+  if (ev.button === 2) {
+    // 右ドラッグ: 図形を掴んで離した位置に複製
+    const hit = hitTestScreen(s);
+    if (hit) {
+      const ids = state.selection.has(hit.id) ? [...state.selection] : [hit.id];
+      const p = snapReal(screenToReal(s));
+      state.copyDrag = {
+        ids, startReal: p, current: p,
+        bounds: unionBounds(state.doc.entities.filter((e) => ids.includes(e.id))),
+      };
+      render();
+    }
     return;
   }
   if (ev.button !== 0) return;
@@ -783,6 +801,12 @@ canvas.addEventListener('pointermove', (ev) => {
   if (state.panDrag) {
     state.mouseReal = screenToReal(s);
     movePan(s);
+    return;
+  }
+  if (state.copyDrag) {
+    state.copyDrag.current = snapReal(screenToReal(s));
+    state.mouseReal = state.copyDrag.current;
+    render();
     return;
   }
   if (state.moveDrag || state.draft?.kind === 'box' || state.tool === 'select') {
@@ -797,6 +821,19 @@ canvas.addEventListener('pointermove', (ev) => {
 canvas.addEventListener('pointerup', (ev) => {
   if (state.panDrag) {
     state.panDrag = null;
+    return;
+  }
+  if (state.copyDrag) {
+    const d = state.copyDrag;
+    state.copyDrag = null;
+    const dx = d.current.x - d.startReal.x;
+    const dy = d.current.y - d.startReal.y;
+    if (dx !== 0 || dy !== 0) {
+      let clones;
+      commit(() => { clones = duplicateEntities(state.doc, d.ids, dx, dy); });
+      state.selection = new Set(clones.map((e) => e.id));
+    }
+    render();
     return;
   }
   handleToolPointerUp(eventScreen(ev));
@@ -833,6 +870,45 @@ function duplicateSelection() {
   let clones;
   commit(() => { clones = duplicateEntities(state.doc, [...state.selection], 10, 10); });
   state.selection = new Set(clones.map((e) => e.id));
+  render();
+}
+
+// ---- コピー & ペースト ----
+function copySelection() {
+  if (state.selection.size === 0) return;
+  state.clipboard = state.doc.entities
+    .filter((e) => state.selection.has(e.id))
+    .map((e) => {
+      const { id, ...rest } = e;
+      return structuredClone(rest);
+    });
+}
+function unionBounds(items) {
+  const k = vt.scaleK(state.doc.scale);
+  const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const e of items) {
+    const eb = entityBounds(e, k);
+    b.minX = Math.min(b.minX, eb.minX); b.minY = Math.min(b.minY, eb.minY);
+    b.maxX = Math.max(b.maxX, eb.maxX); b.maxY = Math.max(b.maxY, eb.maxY);
+  }
+  return b;
+}
+function pasteClipboard() {
+  if (!state.clipboard || state.clipboard.length === 0) return;
+  // 貼り付け位置: マウスがキャンバス上ならその位置(バウンディング中心)、なければ+10mmずらし
+  const b = unionBounds(state.clipboard);
+  const center = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+  const target = state.mouseReal;
+  const dx = target ? target.x - center.x : 10;
+  const dy = target ? target.y - center.y : 10;
+  const ids = [];
+  commit(() => {
+    for (const props of state.clipboard) {
+      ids.push(addEntity(state.doc, structuredClone(props)).id);
+    }
+    translateEntities(state.doc, ids, dx, dy);
+  });
+  state.selection = new Set(ids);
   render();
 }
 function rotateSelection() {
@@ -983,7 +1059,8 @@ function applyNumPanel() {
       while (end <= ang) end += 360;
     }
     commit(() => {
-      sel.cx = p.x; sel.cy = p.y; sel.r = len;
+      sel.cx = p.x; sel.cy = p.y;
+      sel.r = sel.type === 'circle' ? len / 2 : len; // 円は直径入力
       if (sel.type === 'arc') {
         sel.startAngle = ang;
         sel.endAngle = end;
@@ -1255,6 +1332,8 @@ window.addEventListener('keydown', (ev) => {
   if ((ev.ctrlKey && ev.key.toLowerCase() === 'y') ||
       (ev.ctrlKey && ev.shiftKey && ev.key.toLowerCase() === 'z')) { ev.preventDefault(); doRedo(); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 'd') { ev.preventDefault(); duplicateSelection(); }
+  if (ev.ctrlKey && ev.key.toLowerCase() === 'c') { ev.preventDefault(); copySelection(); }
+  if (ev.ctrlKey && ev.key.toLowerCase() === 'v') { ev.preventDefault(); pasteClipboard(); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 's') { ev.preventDefault(); saveFile(ev.shiftKey); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 'o') { ev.preventDefault(); el('file-open').click(); }
 });
