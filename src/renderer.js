@@ -56,7 +56,37 @@ export function draw(ctx, state) {
   drawOrigin(ctx, doc, view);
   if (draft) drawDraft(ctx, doc, view, draft);
   if (state.copyDrag) drawCopyGhost(ctx, doc, view, state.copyDrag);
+  if (state.midGuides?.length) drawMidGuides(ctx, doc, view, state.midGuides);
   if (state.snapHint) drawSnapHint(ctx, doc, view, state.snapHint);
+}
+
+// 中心線モードの中点ガイド: 中点マーカー(三角)と、そこを通る水平/垂直の軸線
+function drawMidGuides(ctx, doc, view, guides) {
+  const EXT = 60; // 軸線の表示長さ(px)
+  ctx.save();
+  ctx.strokeStyle = COLORS.snapHint;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 1.2;
+  for (const g of guides) {
+    const s = realToScreen(g, doc, view);
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y - 5);
+    ctx.lineTo(s.x - 5, s.y + 4);
+    ctx.lineTo(s.x + 5, s.y + 4);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(s.x - EXT, s.y);
+    ctx.lineTo(s.x + EXT, s.y);
+    ctx.moveTo(s.x, s.y - EXT);
+    ctx.lineTo(s.x, s.y + EXT);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 // 右ドラッグ複製の移動先プレビュー(破線の枠)
