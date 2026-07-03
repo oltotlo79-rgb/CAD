@@ -57,6 +57,7 @@ const state = {
   clipboard: null, // Ctrl+C の内部クリップボード(エンティティのプロパティ配列)
   offsetPick: null, // オフセット1段階目で選んだ対象
   message: null,   // ステータスバーの操作ガイド
+  midGuides: [],   // 中心線モードで表示する近傍の中点ガイド
   mouseReal: null,
 };
 let messageTimer = null;
@@ -91,6 +92,30 @@ function snapReal(p) {
 function originToAbs(p) {
   return { x: p.x + state.doc.userOrigin.x, y: p.y + state.doc.userOrigin.y };
 }
+// 中心線モード: カーソル近傍の線分の中点・円/楕円の中心をガイドとして集める
+const DRAW_TOOLS = ['line', 'polyline', 'spline', 'rect', 'circle', 'arc', 'ellipse', 'earc'];
+const MID_GUIDE_SKIP = ['dim', 'leader', 'bom', 'balloon', 'hatch', 'text', 'roughness', 'fcf'];
+function centerMidGuides(cursor) {
+  if (el('line-style').value !== 'center' || !DRAW_TOOLS.includes(state.tool)) return [];
+  const k = vt.scaleK(state.doc.scale);
+  const range = 60 / pxPerRealMm(); // カーソル周辺60px
+  const out = [];
+  for (const e of state.doc.entities) {
+    if (MID_GUIDE_SKIP.includes(e.type)) continue;
+    const b = entityBounds(e, k);
+    if (cursor.x < b.minX - range || cursor.x > b.maxX + range
+      || cursor.y < b.minY - range || cursor.y > b.maxY + range) continue;
+    if (e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse') {
+      out.push({ x: e.cx, y: e.cy });
+      continue;
+    }
+    for (const [a, c] of entitySegments(e)) {
+      out.push({ x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 });
+    }
+  }
+  return out;
+}
+
 // 選択要素からの投影ガイド(投影ガイドONのとき)
 function currentGuides() {
   if (!state.projGuides || state.selection.size === 0) return { xs: [], ys: [] };
@@ -100,8 +125,37 @@ function currentGuides() {
 function resolvePoint(s) {
   const raw = screenToReal(s);
   const tolMm = 10 / pxPerRealMm();
+  const centerMode = el('line-style').value === 'center' && DRAW_TOOLS.includes(state.tool);
+  // 中心線モード: 中点そのもの、または中点を通る水平/垂直の軸ガイドに吸着。
+  // 軸上ならどこでも良い(=図形の外へはみ出して中心線を引ける)
+  if (centerMode && state.midGuides.length > 0) {
+    const tolMid = 12 / pxPerRealMm();
+    const gridX = (pt) => (state.gridSnap && currentGridStep()
+      ? geo.snapToGrid(pt, currentGridStep()) : pt);
+    let best = null;
+    let bd = tolMid;
+    let kind = 'mid';
+    for (const m of state.midGuides) {
+      const d = geo.distance(raw, m);
+      if (d <= bd) { best = { x: m.x, y: m.y }; bd = d; kind = 'mid'; }
+    }
+    if (!best) {
+      for (const m of state.midGuides) {
+        const dH = Math.abs(raw.y - m.y); // 水平軸: yを合わせxは自由(グリッド)
+        if (dH <= bd) { best = { x: gridX(raw).x, y: m.y }; bd = dH; kind = 'guide'; }
+        const dV = Math.abs(raw.x - m.x); // 垂直軸: xを合わせyは自由(グリッド)
+        if (dV <= bd) { best = { x: m.x, y: gridX(raw).y }; bd = dV; kind = 'guide'; }
+      }
+    }
+    if (best) {
+      state.snapHint = { x: best.x, y: best.y, kind };
+      return best;
+    }
+  }
   const cands = [];
-  if (state.osnap) {
+  // 中心線モードでは端点・交点等への通常スナップを止める(角に吸われて
+  // 図形の内側に閉じ込められるのを防ぐ)
+  if (state.osnap && !centerMode) {
     const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale));
     if (hit) cands.push(hit);
   }
@@ -966,8 +1020,10 @@ canvas.addEventListener('pointermove', (ev) => {
   }
   if (state.moveDrag || state.draft?.kind === 'box' || state.tool === 'select') {
     state.snapHint = null;
+    state.midGuides = [];
     state.mouseReal = snapReal(screenToReal(s));
   } else {
+    state.midGuides = centerMidGuides(screenToReal(s));
     state.mouseReal = resolvePoint(s);
   }
   handleToolPointerMove(s);
