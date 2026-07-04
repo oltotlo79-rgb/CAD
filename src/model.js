@@ -25,6 +25,7 @@ export const STYLE_PRESETS = {
   hidden:  { label: 'かくれ線', lineType: 'dashed', layer: 'hidden' },
   center:  { label: '中心線',   lineType: 'chain',  layer: 'center' },
   phantom: { label: '想像線',   lineType: 'chain2', layer: 'outline' },
+  thinline: { label: '細実線',  lineType: 'thin',   layer: 'outline' }, // 印刷される細実線(ねじ谷など)
   aux:     { label: '補助線',   lineType: 'thin',   layer: 'aux' },
 };
 
