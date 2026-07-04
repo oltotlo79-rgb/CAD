@@ -16,6 +16,7 @@ import { toSVG } from './svgExport.js';
 import { titleBlockLayout } from './titleBlock.js';
 import { boundaryFromEntity } from './hatch.js';
 import { bomLayout, bomRowsFromBalloons } from './bom.js';
+import { threadHoleEntities } from './thread.js';
 import {
   trimLine, extendLine, offsetEntity, filletLines, chamferLines,
 } from './editOps.js';
@@ -941,6 +942,14 @@ function handleToolPointerDown(s, ev) {
       layer: 'note', lineType: 'thin',
     }));
     setTool('select');
+  } else if (state.tool === 'thread') {
+    // ねじ穴: クリック位置に 下穴円+谷3/4円弧+中心線十字 を一括生成
+    const parts = threadHoleEntities(p, el('thread-size').value, 3 / vt.scaleK(state.doc.scale));
+    if (parts) {
+      commit(() => {
+        for (const props of parts) addEntity(state.doc, props);
+      });
+    }
   } else if (state.tool === 'trim') {
     const hit = hitTestScreen(s);
     if (!hit) {

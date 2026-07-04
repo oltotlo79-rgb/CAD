@@ -48,6 +48,11 @@
     <input id="hatch-space" size="3" value="3" title="ハッチ間隔(用紙mm)">
     <button class="tool" data-tool="balloon">バルーン</button>
     <button class="tool" data-tool="bom">部品表</button>
+    <button class="tool" data-tool="thread">ねじ穴</button>
+    <select id="thread-size" title="ねじの呼び(JIS並目)">
+      <option>M3</option><option>M4</option><option>M5</option>
+      <option selected>M6</option><option>M8</option><option>M10</option><option>M12</option>
+    </select>
   </div>
   <div class="group">
     <button id="undo">元に戻す</button>
@@ -72,6 +77,7 @@
       <option value="hidden">かくれ線</option>
       <option value="center">中心線</option>
       <option value="phantom">想像線</option>
+      <option value="thinline">細実線</option>
       <option value="aux">補助線</option>
     </select></label>
   </div>
