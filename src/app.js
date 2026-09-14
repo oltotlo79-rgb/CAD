@@ -10,7 +10,11 @@ import {
   entitySegments,
 } from './model.js';
 import { findSnap } from './snap.js';
-import { dimText } from './dims.js';
+import { dimText, DIM_TEXT_MM } from './dims.js';
+import {
+  WIDTH_CHOICES_MM, TEXT_CHOICES_MM, hasStroke, hasText, widthSettingMm, textHeightMm,
+  applyWidth, applyTextHeight, commonValue, strokeStyleOf,
+} from './entityStyle.js';
 import { projectionGuides, guideSnapCandidates } from './guides.js';
 import { toSVG } from './svgExport.js';
 import { titleBlockLayout } from './titleBlock.js';
@@ -60,6 +64,12 @@ const state = {
   message: null,   // ステータスバーの操作ガイド
   midGuides: [],   // 中心線モードで表示する近傍の中点ガイド
   mouseReal: null,
+  // 次に作る図形の線の太さ・文字高さ(用紙mm)。ツールの種類ごとに覚える(widthMm:null=標準)
+  pen: {
+    shape: { widthMm: null },                     // 直線・円などの図形
+    text: { textMm: DIM_TEXT_MM },                // 文字
+    anno: { widthMm: null, textMm: DIM_TEXT_MM }, // 寸法・記号・バルーン・部品表・ハッチ
+  },
 };
 let messageTimer = null;
 function showMessage(text) {
@@ -172,10 +182,19 @@ function resolvePoint(s) {
   state.snapHint = null;
   return snapReal(raw);
 }
-// 作図中の線種プリセット → エンティティ属性
+// 作図中の線種プリセット・太さ → エンティティ属性
+const widthProp = (pen) => (pen.widthMm ? { widthMm: pen.widthMm } : {});
 function styleProps() {
   const preset = STYLE_PRESETS[el('line-style').value] ?? STYLE_PRESETS.outline;
-  return { lineType: preset.lineType, layer: preset.layer };
+  return { lineType: preset.lineType, layer: preset.layer, ...widthProp(state.pen.shape) };
+}
+// 寸法・記号・部品表の属性(細線。太さ・文字高さは注記ツールの設定、3.5mmは既定なので省略)
+function annoProps(layer) {
+  const { textMm } = state.pen.anno;
+  return {
+    layer, lineType: 'thin', ...widthProp(state.pen.anno),
+    ...(textMm !== DIM_TEXT_MM ? { textMm } : {}),
+  };
 }
 // 寸法の向きと配置: 2点が水平/垂直なら自動、斜めはカーソル位置で判定(Shiftで平行寸法)
 function dimPlacement(p1, p2, c, aligned) {
@@ -203,6 +222,7 @@ function render() {
   draw(ctx, state);
   updateStatus();
   syncNumPanel();
+  syncStyleUI();
   updateScrollbars();
 }
 
@@ -783,7 +803,7 @@ function handleToolPointerDown(s, ev) {
       commit(() => addEntity(state.doc, {
         type: 'dim', dimType: 'linear', orient,
         p1: [d.p1.x, d.p1.y], p2: [d.p2.x, d.p2.y], offset,
-        override: null, layer: 'dim', lineType: 'thin',
+        override: null, ...annoProps('dim'),
       }));
     }
     render();
@@ -795,7 +815,7 @@ function handleToolPointerDown(s, ev) {
       const dimType = state.tool === 'dia' ? 'dia' : 'rad';
       commit(() => addEntity(state.doc, {
         type: 'dim', dimType, cx: hit.cx, cy: hit.cy, r: hit.r, angleDeg,
-        override: null, layer: 'dim', lineType: 'thin',
+        override: null, ...annoProps('dim'),
       }));
     }
   } else if (state.tool === 'angle') {
@@ -813,7 +833,7 @@ function handleToolPointerDown(s, ev) {
         commit(() => addEntity(state.doc, {
           type: 'dim', dimType: 'angle',
           vertex: [d.vertex.x, d.vertex.y], p1: [d.p1.x, d.p1.y], p2: [p.x, p.y],
-          radius, override: null, layer: 'dim', lineType: 'thin',
+          radius, override: null, ...annoProps('dim'),
         }));
       }
     }
@@ -839,7 +859,7 @@ function handleToolPointerDown(s, ev) {
         if (!(r > 0)) {
           showMessage(`${toolName}: サイズ(mm)を正の数で入力してください`);
         } else {
-          const style = { layer: first.line.layer, lineType: first.line.lineType };
+          const style = strokeStyleOf(first.line);
           if (state.tool === 'fillet') {
             const f = filletLines(first.line, first.click, hit, screenToReal(s), r);
             if (f) {
@@ -869,13 +889,11 @@ function handleToolPointerDown(s, ev) {
     }
   } else if (state.tool === 'roughness') {
     commit(() => addEntity(state.doc, {
-      type: 'roughness', x: p.x, y: p.y, value: 'Ra 6.3',
-      layer: 'note', lineType: 'thin',
+      type: 'roughness', x: p.x, y: p.y, value: 'Ra 6.3', ...annoProps('note'),
     }));
   } else if (state.tool === 'fcf') {
     commit(() => addEntity(state.doc, {
-      type: 'fcf', x: p.x, y: p.y, cells: ['//', '0.05', 'A'],
-      layer: 'note', lineType: 'thin',
+      type: 'fcf', x: p.x, y: p.y, cells: ['//', '0.05', 'A'], ...annoProps('note'),
     }));
   } else if (state.tool === 'chamfer') {
     if (!state.draft) {
@@ -894,7 +912,7 @@ function handleToolPointerDown(s, ev) {
       state.draft = null;
       commit(() => addEntity(state.doc, {
         type: 'dim', dimType: 'chamfer', p1: d.seg.p1, p2: d.seg.p2,
-        tail: [p.x, p.y], size: d.size, override: null, layer: 'dim', lineType: 'thin',
+        tail: [p.x, p.y], size: d.size, override: null, ...annoProps('dim'),
       }));
     }
     render();
@@ -917,7 +935,7 @@ function handleToolPointerDown(s, ev) {
         const spacingMm = Math.max(0.5, Number(el('hatch-space').value) || 3);
         commit(() => addEntity(state.doc, {
           type: 'hatch', boundary, angleDeg, spacingMm,
-          layer: 'outline', lineType: 'thin',
+          layer: 'outline', lineType: 'thin', ...widthProp(state.pen.anno),
         }));
       }
     }
@@ -932,14 +950,14 @@ function handleToolPointerDown(s, ev) {
         .reduce((m, en) => Math.max(m, Number(en.number) || 0), 0) + 1;
       commit(() => addEntity(state.doc, {
         type: 'balloon', number: next, at: [d.from.x, d.from.y], pos: [p.x, p.y],
-        layer: 'note', lineType: 'thin',
+        ...annoProps('note'),
       }));
     }
     render();
   } else if (state.tool === 'bom') {
     commit(() => addEntity(state.doc, {
       type: 'bom', x: p.x, y: p.y, rows: bomRowsFromBalloons(state.doc.entities),
-      layer: 'note', lineType: 'thin',
+      ...annoProps('note'),
     }));
     setTool('select');
   } else if (state.tool === 'thread') {
@@ -1258,7 +1276,7 @@ function explodeSelection() {
     for (const e of targets) {
       for (const [a, b] of entitySegments(e)) {
         ids.push(addEntity(state.doc, {
-          type: 'line', layer: e.layer, lineType: e.lineType,
+          type: 'line', ...strokeStyleOf(e),
           x1: a.x, y1: a.y, x2: b.x, y2: b.y,
         }).id);
       }
@@ -1303,13 +1321,13 @@ textEntry.addEventListener('keydown', (ev) => {
   closeTextEntry();
   if (mode === 'text' && value && ctx2) {
     commit(() => addEntity(state.doc, {
-      type: 'text', x: ctx2.pos.x, y: ctx2.pos.y, content: value, height: 3.5,
+      type: 'text', x: ctx2.pos.x, y: ctx2.pos.y, content: value, height: state.pen.text.textMm,
       layer: 'note', lineType: 'thin',
     }));
   } else if (mode === 'leader' && value && ctx2) {
     commit(() => addEntity(state.doc, {
       type: 'leader', points: [[ctx2.from.x, ctx2.from.y], [ctx2.elbow.x, ctx2.elbow.y]],
-      content: value, override: null, layer: 'dim', lineType: 'thin',
+      content: value, override: null, ...annoProps('dim'),
     }));
   } else if (mode === 'titlefield' && ctx2) {
     state.doc.titleBlock.fields[ctx2.index].value = value;
@@ -1502,6 +1520,83 @@ el('show45').addEventListener('change', () => {
   state.show45 = el('show45').checked;
   render();
 });
+
+// ---- 線の太さ・文字高さ ----
+// 選択ツールで図形を選択中は「選択図形の値」を表示・変更し、
+// それ以外は「そのツールで次に作る図形の設定」を表示・変更する(ツールの種類ごとに記憶)
+const ANNO_TOOLS = ['dim', 'dia', 'rad', 'angle', 'chamfer', 'leader', 'roughness', 'fcf', 'balloon', 'bom'];
+function toolPen(tool) {
+  if (DRAW_TOOLS.includes(tool)) return { pen: state.pen.shape, width: true, text: false };
+  if (tool === 'text') return { pen: state.pen.text, width: false, text: true };
+  if (ANNO_TOOLS.includes(tool)) return { pen: state.pen.anno, width: true, text: true };
+  if (tool === 'hatch') return { pen: state.pen.anno, width: true, text: false };
+  return null; // トリム・原点設定など(新しく作る線は元の図形の太さを引き継ぐ)
+}
+function editingSelection() {
+  return state.tool === 'select' && state.selection.size > 0;
+}
+function buildStyleOptions() {
+  const add = (select, label, value, hidden = false) => {
+    const opt = new Option(label, value);
+    opt.hidden = hidden;
+    select.add(opt);
+  };
+  for (const select of [el('line-width'), el('text-size')]) {
+    add(select, '—', 'none', true);    // 対象外(無効)のときの表示
+    add(select, '混在', 'mixed', true); // 選択図形で値がばらばらのときの表示
+  }
+  add(el('line-width'), '標準', '');
+  for (const mm of WIDTH_CHOICES_MM) add(el('line-width'), `${mm}mm`, String(mm));
+  for (const mm of TEXT_CHOICES_MM) add(el('text-size'), `${mm}mm`, String(mm));
+}
+// info: null=対象なし(無効) / {mixed:true} / {value}(太さの null は標準)
+function showStyleValue(select, info) {
+  select.disabled = !info;
+  let v = 'none';
+  if (info) v = info.mixed ? 'mixed' : info.value == null ? '' : String(info.value);
+  if (![...select.options].some((o) => o.value === v)) {
+    // 選択肢にない値(ファイルを手で編集した場合など)も表示できるよう昇順の位置に足す
+    const before = [...select.options].find((o) => Number(o.value) > Number(v));
+    select.add(new Option(`${v}mm`, v), before ?? null);
+  }
+  if (select.value !== v) select.value = v;
+}
+function syncStyleUI() {
+  let width = null;
+  let text = null;
+  if (editingSelection()) {
+    const sel = state.doc.entities.filter((e) => state.selection.has(e.id));
+    width = commonValue(sel.filter(hasStroke), widthSettingMm);
+    text = commonValue(sel.filter(hasText), textHeightMm);
+  } else {
+    const t = toolPen(state.tool);
+    if (t?.width) width = { value: t.pen.widthMm, mixed: false };
+    if (t?.text) text = { value: t.pen.textMm, mixed: false };
+  }
+  showStyleValue(el('line-width'), width);
+  showStyleValue(el('text-size'), text);
+}
+function changeStyle(kind, select) {
+  const raw = select.value;
+  select.blur(); // 変更後すぐ Delete・Ctrl+Z などのキー操作が図面に効くように
+  if (raw === 'none' || raw === 'mixed') return;
+  const mm = raw === '' ? null : Number(raw);
+  if (editingSelection()) {
+    const applies = kind === 'width' ? hasStroke : hasText;
+    const apply = kind === 'width' ? applyWidth : applyTextHeight;
+    const targets = state.doc.entities.filter((e) => state.selection.has(e.id) && applies(e));
+    if (targets.length > 0) {
+      commit(() => { for (const e of targets) apply(e, mm); });
+      return;
+    }
+  } else {
+    const t = toolPen(state.tool);
+    if (t?.[kind]) t.pen[kind === 'width' ? 'widthMm' : 'textMm'] = mm;
+  }
+  render();
+}
+el('line-width').addEventListener('change', (ev) => changeStyle('width', ev.target));
+el('text-size').addEventListener('change', (ev) => changeStyle('text', ev.target));
 
 // ---- レイヤーパネル ----
 function buildLayerPanel() {
@@ -1703,6 +1798,7 @@ window.addEventListener('keyup', (ev) => {
 
 // ---- 起動 ----
 window.__seizu = state; // デバッグ・動作検証用(読み取り想定)
+buildStyleOptions();
 resizeCanvas();
 syncSettingsUI();
 buildLayerPanel();

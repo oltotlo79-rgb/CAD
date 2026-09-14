@@ -3,9 +3,7 @@ import {
   distance, angleDegOf, distancePointToSegment, rotate90Point, catmullRomPoints,
   lineEndPoint,
 } from './geometry.js';
-import {
-  dimLayout, DIM_TEXT_MM, balloonLayout, BALLOON_R_MM, annotationLayout,
-} from './dims.js';
+import { balloonLayout, annotationLayout } from './dims.js';
 import { DEFAULT_TITLE_FIELDS } from './titleBlock.js';
 import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
 import { bomLayout } from './bom.js';
@@ -410,7 +408,7 @@ export function entitySnapPoints(e) {
 export function entityBounds(e, k = 1) {
   if (e.type === 'hatch') return boundaryBBox(e.boundary);
   if (e.type === 'balloon') {
-    const r = BALLOON_R_MM / k;
+    const { r } = balloonLayout(e, k).circle;
     return {
       minX: Math.min(e.pos[0] - r, e.at[0]), minY: Math.min(e.pos[1] - r, e.at[1]),
       maxX: Math.max(e.pos[0] + r, e.at[0]), maxY: Math.max(e.pos[1] + r, e.at[1]),
@@ -478,7 +476,7 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
     for (const [a, b] of layout.lines) {
       if (distancePointToSegment(p, a, b) <= tolMm) return true;
     }
-    const textH = DIM_TEXT_MM / k;
+    const textH = layout.textMm / k;
     for (const t of layout.texts) {
       const w = t.content.length * textH;
       const x0 = t.align === 'center' ? t.x - w / 2 : t.align === 'right' ? t.x - w : t.x;

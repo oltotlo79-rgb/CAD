@@ -90,6 +90,19 @@ test('offsetEntity: 円は外側クリックで拡大、内側で縮小', () => 
   assert.equal(offsetEntity(c, 25, { x: 1, y: 0 }), null); // r<=0
 });
 
+test('trimLine / offsetEntity: 変更した線の太さ(widthMm)を引き継ぐ', () => {
+  const thick = { ...hline, widthMm: 0.7 };
+  const pieces = trimLine(thick, { x: 50, y: 0 }, [cutterAt(30), cutterAt(70)]);
+  assert.deepEqual(pieces.map((p) => p.widthMm), [0.7, 0.7]);
+  assert.equal(offsetEntity(thick, 10, { x: 50, y: 5 }).widthMm, 0.7);
+  const circle = { type: 'circle', layer: 'outline', lineType: 'solid', cx: 0, cy: 0, r: 20, widthMm: 1 };
+  assert.equal(offsetEntity(circle, 5, { x: 30, y: 0 }).widthMm, 1);
+  const rect = { type: 'rect', layer: 'outline', lineType: 'solid', x: 0, y: 0, width: 40, height: 20, widthMm: 0.35 };
+  assert.equal(offsetEntity(rect, 5, { x: 100, y: 100 }).widthMm, 0.35);
+  // 太さ未指定なら付かない(標準のまま)
+  assert.ok(!('widthMm' in trimLine(hline, { x: 10, y: 0 }, [cutterAt(30)])[0]));
+});
+
 test('offsetEntity: 矩形は内側クリックで縮み、外側で膨らむ', () => {
   const r = { type: 'rect', layer: 'outline', lineType: 'solid', x: 0, y: 0, width: 40, height: 20 };
   const grown = offsetEntity(r, 5, { x: 100, y: 100 });

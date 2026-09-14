@@ -1,10 +1,16 @@
 import { distance, angleDegOf } from './geometry.js';
 
 // 寸法の描画定数。すべて用紙上mm(縮尺に依存しない)
-export const DIM_TEXT_MM = 3.5;   // 文字高さ
+export const DIM_TEXT_MM = 3.5;   // 文字高さの既定値
 export const DIM_ARROW_MM = 3;    // 矢印長さ
 export const DIM_EXT_MM = 2;      // 寸法補助線の突き出し
 export const DIM_GAP_MM = 1;      // 文字と寸法線の間隔
+
+// 注記(寸法・引出線・記号・バルーン・部品表)の文字高さ。要素ごとに textMm で変えられる
+export function annoTextMm(e) {
+  const v = Number(e.textMm);
+  return v > 0 ? v : DIM_TEXT_MM;
+}
 
 const DEG = Math.PI / 180;
 
@@ -40,7 +46,8 @@ function angleSweep(e) {
 
 // 表面粗さ記号(チェックマーク形状+値)
 export function roughnessLayout(e, k = 1) {
-  const h = 5 / k; // 記号高さ(用紙5mm)
+  const textMm = annoTextMm(e);
+  const h = (5 * textMm) / DIM_TEXT_MM / k; // 記号高さ(文字3.5mmで用紙5mm)
   const gap = DIM_GAP_MM / k;
   const tip = { x: e.x, y: e.y };
   const leg60 = (deg, len) => ({
@@ -54,14 +61,17 @@ export function roughnessLayout(e, k = 1) {
     texts: [{
       x: right.x + gap, y: right.y, content: e.value ?? '', angleDeg: 0, align: 'left',
     }],
+    textMm,
   };
 }
 
-// 幾何公差の公差記入枠(セルを横に並べた箱)
+// 幾何公差の公差記入枠(セルを横に並べた箱)。枠は文字高さに比例
 export function fcfLayout(e, k = 1) {
-  const rowH = 7 / k;
-  const textH = DIM_TEXT_MM / k;
-  const pad = 1.5 / k;
+  const textMm = annoTextMm(e);
+  const s = textMm / DIM_TEXT_MM;
+  const rowH = (7 * s) / k;
+  const textH = textMm / k;
+  const pad = (1.5 * s) / k;
   const cells = e.cells ?? [];
   const widths = cells.map((c) => Math.max(rowH, String(c).length * textH * 0.8 + pad * 2));
   const lines = [];
@@ -80,7 +90,7 @@ export function fcfLayout(e, k = 1) {
   lines.push([{ x, y: y0 }, { x, y: y1 }]);
   lines.push([{ x: e.x, y: y0 }, { x, y: y0 }]);
   lines.push([{ x: e.x, y: y1 }, { x, y: y1 }]);
-  return { lines, arrows: [], texts };
+  return { lines, arrows: [], texts, textMm };
 }
 
 // 注記系エンティティの共通レイアウト取得
@@ -91,12 +101,13 @@ export function annotationLayout(e, k = 1) {
   return null;
 }
 
-export const BALLOON_R_MM = 4; // バルーン円の半径(用紙mm)
+export const BALLOON_R_MM = 4; // バルーン円の半径(用紙mm、文字3.5mm時。文字に比例)
 
 // バルーン(部品番号)のレイアウト。円+番号+対象への引出線
 export function balloonLayout(e, k = 1) {
-  const r = BALLOON_R_MM / k;
-  const textH = DIM_TEXT_MM / k;
+  const textMm = annoTextMm(e);
+  const r = (BALLOON_R_MM * textMm) / DIM_TEXT_MM / k;
+  const textH = textMm / k;
   const at = { x: e.at[0], y: e.at[1] };
   const pos = { x: e.pos[0], y: e.pos[1] };
   const d = distance(pos, at) || 1;
@@ -112,14 +123,17 @@ export function balloonLayout(e, k = 1) {
       x: pos.x, y: pos.y - textH * 0.35,
       content: String(e.number), angleDeg: 0, align: 'center',
     }],
+    textMm,
   };
 }
 
 // 寸法・引出線の構成要素(実寸mm座標)を計算する。
 // k は縮尺係数。文字・矢印・突き出しは用紙mm基準なので実寸へ換算する。
-// 戻り値: { lines: [[a,b],...], arrows: [{at,angleDeg}], texts: [{x,y,content,angleDeg,align}] }
+// 戻り値: { lines: [[a,b],...], arrows: [{at,angleDeg}], texts: [{x,y,content,angleDeg,align}],
+//          textMm(文字高さ・用紙mm) }
 export function dimLayout(e, k = 1) {
-  const textH = DIM_TEXT_MM / k;
+  const textMm = annoTextMm(e);
+  const textH = textMm / k;
   const ext = DIM_EXT_MM / k;
   const gap = DIM_GAP_MM / k;
   const lines = [];
@@ -146,7 +160,7 @@ export function dimLayout(e, k = 1) {
       x: dir === 1 ? elbow.x + gap : elbow.x - gap,
       y: elbow.y + gap, content: text, angleDeg: 0, align: dir === 1 ? 'left' : 'right',
     });
-    return { lines, arrows, texts };
+    return { lines, arrows, texts, textMm };
   }
 
   if (e.dimType === 'linear') {
@@ -196,7 +210,7 @@ export function dimLayout(e, k = 1) {
         content: text, angleDeg: ang, align: 'center',
       });
     }
-    return { lines, arrows, texts };
+    return { lines, arrows, texts, textMm };
   }
 
   if (e.dimType === 'dia' || e.dimType === 'rad') {
@@ -216,7 +230,7 @@ export function dimLayout(e, k = 1) {
       x: dx >= 0 ? tail.x + gap : tail.x - gap,
       y: tail.y + gap, content: text, angleDeg: 0, align: dx >= 0 ? 'left' : 'right',
     });
-    return { lines, arrows, texts };
+    return { lines, arrows, texts, textMm };
   }
 
   if (e.dimType === 'angle') {
@@ -236,7 +250,7 @@ export function dimLayout(e, k = 1) {
     const mid = (a1 + a2) / 2;
     const tp = at(mid, r + gap + textH * 0.5);
     texts.push({ x: tp.x, y: tp.y, content: text, angleDeg: 0, align: 'center' });
-    return { lines, arrows, texts, arcs };
+    return { lines, arrows, texts, arcs, textMm };
   }
 
   if (e.dimType === 'chamfer') {
@@ -251,8 +265,8 @@ export function dimLayout(e, k = 1) {
       x: dir === 1 ? elbow.x + gap : elbow.x - gap,
       y: elbow.y + gap, content: text, angleDeg: 0, align: dir === 1 ? 'left' : 'right',
     });
-    return { lines, arrows, texts };
+    return { lines, arrows, texts, textMm };
   }
 
-  return { lines, arrows, texts };
+  return { lines, arrows, texts, textMm };
 }
