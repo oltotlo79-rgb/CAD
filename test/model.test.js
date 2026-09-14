@@ -205,6 +205,21 @@ test('hitTestEntity: 円は円周のみヒット、円弧は角度範囲内の�
   assert.ok(!hitTestEntity(arc, { x: 7.07, y: -7.07 }, 0.5)); // -45°は範囲外
 });
 
+test('hitTestEntity: 寸法の文字を大きくすると文字の範囲もクリックで選べる', () => {
+  // 寸法値 "100" は x=50 中央、y=21(寸法線+隙間1mm)から上に文字高さぶん
+  const dim = { type: 'dim', dimType: 'linear', orient: 'h', p1: [0, 0], p2: [100, 0], offset: 20 };
+  const p = { x: 50, y: 27 }; // 3.5mm文字の上端(24.5)より上、7mm文字(28)の内側
+  assert.ok(!hitTestEntity(dim, p, 0.1, 1));
+  assert.ok(hitTestEntity({ ...dim, textMm: 7 }, p, 0.1, 1));
+});
+
+test('entityBounds: バルーンは文字高さに比例した円の大きさで囲む', () => {
+  const b = { type: 'balloon', number: 1, at: [0, 0], pos: [30, 0] };
+  assert.equal(entityBounds(b, 1).maxX, 34);
+  assert.equal(entityBounds({ ...b, textMm: 7 }, 1).maxX, 38);
+  assert.equal(entityBounds({ ...b, textMm: 7 }, 1).minY, -8);
+});
+
 test('hitTestEntity: 楕円は輪郭近傍のみヒット', () => {
   const el = { type: 'ellipse', cx: 0, cy: 0, rx: 10, ry: 5 };
   assert.ok(hitTestEntity(el, { x: 10.2, y: 0 }, 1));

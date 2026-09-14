@@ -1,6 +1,7 @@
 // トリム・延長・オフセット(Phase 4 では対象を絞った実装)
 // - トリム/延長: 直線(line)のみ対象。境界は全要素の線分と円/円弧(円として扱う)
 import { entitySegments } from './model.js';
+import { strokeStyleOf } from './entityStyle.js';
 import {
   round6, distance, segSegIntersection, segCircleIntersections,
   raySegIntersection, rayCircleIntersections,
@@ -51,7 +52,7 @@ export function trimLine(line, clickPoint, others) {
   }
   const at = (t) => ({ x: round6(a.x + dx * t), y: round6(a.y + dy * t) });
   const pieces = [];
-  const base = { type: 'line', layer: line.layer, lineType: line.lineType };
+  const base = { type: 'line', ...strokeStyleOf(line) };
   if (tLo > 0) {
     const p = at(tLo);
     pieces.push({ ...base, x1: line.x1, y1: line.y1, x2: p.x, y2: p.y });
@@ -191,7 +192,7 @@ export function offsetEntity(e, dist, sidePoint) {
     const side = (sidePoint.x - e.x1) * nx + (sidePoint.y - e.y1) * ny;
     if (side < 0) { nx = -nx; ny = -ny; }
     return {
-      type: 'line', layer: e.layer, lineType: e.lineType,
+      type: 'line', ...strokeStyleOf(e),
       x1: round6(e.x1 + nx * dist), y1: round6(e.y1 + ny * dist),
       x2: round6(e.x2 + nx * dist), y2: round6(e.y2 + ny * dist),
     };
@@ -200,7 +201,7 @@ export function offsetEntity(e, dist, sidePoint) {
     const dCenter = Math.hypot(sidePoint.x - e.cx, sidePoint.y - e.cy);
     const r = dCenter >= e.r ? e.r + dist : e.r - dist;
     if (r <= 0) return null;
-    const props = { type: e.type, layer: e.layer, lineType: e.lineType, cx: e.cx, cy: e.cy, r: round6(r) };
+    const props = { type: e.type, ...strokeStyleOf(e), cx: e.cx, cy: e.cy, r: round6(r) };
     if (e.type === 'arc') {
       props.startAngle = e.startAngle;
       props.endAngle = e.endAngle;
@@ -220,7 +221,7 @@ export function offsetEntity(e, dist, sidePoint) {
     const height = e.height + d * 2;
     if (width <= 0 || height <= 0) return null;
     return {
-      type: 'rect', layer: e.layer, lineType: e.lineType,
+      type: 'rect', ...strokeStyleOf(e),
       x: round6(e.x - d * c + d * s), y: round6(e.y - d * s - d * c),
       width: round6(width), height: round6(height), rotation: e.rotation ?? 0,
     };

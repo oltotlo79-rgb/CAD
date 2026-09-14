@@ -3,8 +3,9 @@ import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
 import { entitySegments, LINE_STYLES } from './model.js';
 import {
-  dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout, annotationLayout,
+  dimLayout, DIM_ARROW_MM, balloonLayout, annotationLayout,
 } from './dims.js';
+import { strokeWidthMm } from './entityStyle.js';
 import { catmullRomPoints } from './geometry.js';
 import { titleBlockLayout } from './titleBlock.js';
 import { hatchSegments } from './hatch.js';
@@ -252,7 +253,7 @@ function strokeEntity(ctx, doc, view, e, k) {
       }
     }
     drawArrows(ctx, doc, view, layout.arrows);
-    drawDimTexts(ctx, doc, view, layout.texts);
+    drawDimTexts(ctx, doc, view, layout.texts, layout.textMm);
   } else if (e.type === 'hatch') {
     strokeSegments(ctx, doc, view, hatchSegments(e.boundary, e.angleDeg, e.spacingMm / k));
   } else if (e.type === 'balloon') {
@@ -263,17 +264,11 @@ function strokeEntity(ctx, doc, view, e, k) {
     ctx.stroke();
     strokeSegments(ctx, doc, view, layout.lines);
     drawArrows(ctx, doc, view, layout.arrows);
-    drawDimTexts(ctx, doc, view, layout.texts);
+    drawDimTexts(ctx, doc, view, layout.texts, layout.textMm);
   } else if (e.type === 'bom') {
     const layout = bomLayout(e, k);
     strokeSegments(ctx, doc, view, [...layout.hLines, ...layout.vLines]);
-    const pad = 1.5 / k;
-    const texts = [...layout.headers, ...layout.cells].map((cell) => ({
-      x: cell.rect.x + pad,
-      y: cell.rect.y + cell.rect.height / 2 - (DIM_TEXT_MM / k) * 0.35,
-      content: cell.text, angleDeg: 0, align: 'left',
-    }));
-    drawDimTexts(ctx, doc, view, texts);
+    drawDimTexts(ctx, doc, view, layout.texts, layout.textMm);
   } else {
     strokeSegments(ctx, doc, view, entitySegments(e));
   }
@@ -299,8 +294,8 @@ function drawArrows(ctx, doc, view, arrows) {
   }
 }
 
-function drawDimTexts(ctx, doc, view, texts) {
-  ctx.font = `${Math.max(6, DIM_TEXT_MM * view.pxPerMm)}px "Yu Gothic UI", "Meiryo", sans-serif`;
+function drawDimTexts(ctx, doc, view, texts, textMm) {
+  ctx.font = `${Math.max(6, textMm * view.pxPerMm)}px "Yu Gothic UI", "Meiryo", sans-serif`;
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = ctx.strokeStyle;
   for (const t of texts) {
@@ -322,8 +317,8 @@ function drawEntities(ctx, doc, view, state, k) {
     if (visible.get(e.layer) === false) continue;
     const style = LINE_STYLES[e.lineType] ?? LINE_STYLES.solid;
     const isSelected = selection.has(e.id);
-    // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)
-    const width = Math.max(1, style.widthMm * view.pxPerMm);
+    // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)。太さは要素ごとの指定を優先
+    const width = Math.max(1, strokeWidthMm(e) * view.pxPerMm);
     ctx.strokeStyle = isSelected ? COLORS.selected : COLORS.entity;
     ctx.lineWidth = isSelected ? width + 2 : width;
     ctx.setLineDash(style.dashMm.map((mm) => Math.max(1.5, mm * view.pxPerMm)));

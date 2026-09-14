@@ -1,17 +1,23 @@
 // 部品表(BOM)。表として1枚の図面上に自由配置する。
+import { annoTextMm, DIM_TEXT_MM } from './dims.js';
+
+// 列幅・行高さは用紙mm(文字高さ3.5mm時。文字高さに比例して表全体を拡縮する)
 export const BOM_COLS = [
   { field: 'no', label: '品番', widthMm: 12 },
   { field: 'name', label: '品名', widthMm: 45 },
   { field: 'qty', label: '数量', widthMm: 12 },
   { field: 'material', label: '材質', widthMm: 25 },
 ];
-export const BOM_ROW_H_MM = 8; // 用紙mm
+export const BOM_ROW_H_MM = 8;
 
-// e: {type:'bom', x, y(実寸mm・左下), rows:[{no,name,qty,material}]}
-// 戻り値: { rect, hLines, vLines, cells:[{rowIndex, field, rect, text}], headers:[...] }
+// e: {type:'bom', x, y(実寸mm・左下), rows:[{no,name,qty,material}], textMm?}
+// 戻り値: { rect, hLines, vLines, cells:[{rowIndex, field, rect, text}], headers:[...],
+//          texts:[{x,y,content,angleDeg,align}], textMm }
 export function bomLayout(e, k = 1) {
-  const rowH = BOM_ROW_H_MM / k;
-  const widths = BOM_COLS.map((c) => c.widthMm / k);
+  const textMm = annoTextMm(e);
+  const s = textMm / DIM_TEXT_MM;
+  const rowH = (BOM_ROW_H_MM * s) / k;
+  const widths = BOM_COLS.map((c) => (c.widthMm * s) / k);
   const totalW = widths.reduce((a, b) => a + b, 0);
   const totalH = rowH * (e.rows.length + 1); // +ヘッダ行
   const rect = { x: e.x, y: e.y, width: totalW, height: totalH };
@@ -48,7 +54,15 @@ export function bomLayout(e, k = 1) {
   for (let i = 0; i < e.rows.length; i++) {
     cells.push(...cellsFor(i, e.y + totalH - rowH * (i + 2)));
   }
-  return { rect, hLines, vLines, cells, headers };
+  // セル内の文字(左詰め・上下中央)
+  const pad = (1.5 * s) / k;
+  const textH = textMm / k;
+  const texts = [...headers, ...cells].map((cell) => ({
+    x: cell.rect.x + pad,
+    y: cell.rect.y + cell.rect.height / 2 - textH * 0.35,
+    content: cell.text, angleDeg: 0, align: 'left',
+  }));
+  return { rect, hLines, vLines, cells, headers, texts, textMm };
 }
 
 // バルーンから初期行を作る(番号の昇順・重複なし)

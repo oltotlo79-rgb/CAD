@@ -2,9 +2,8 @@
 // 印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
 import { paperDimensions, frameRect } from './papers.js';
 import { LINE_STYLES, entitySegments, ellipsePoint, isEllipseArc } from './model.js';
-import {
-  dimLayout, DIM_TEXT_MM, DIM_ARROW_MM, balloonLayout, annotationLayout,
-} from './dims.js';
+import { DIM_ARROW_MM, balloonLayout, annotationLayout } from './dims.js';
+import { strokeWidthMm } from './entityStyle.js';
 import { catmullRomPoints } from './geometry.js';
 import { hatchSegments } from './hatch.js';
 import { bomLayout } from './bom.js';
@@ -64,7 +63,7 @@ export function toSVG(doc) {
 function strokeAttrs(e) {
   const style = LINE_STYLES[e.lineType] ?? LINE_STYLES.solid;
   const dash = style.dashMm.length > 0 ? ` stroke-dasharray="${style.dashMm.join(' ')}"` : '';
-  return `stroke="black" stroke-width="${style.widthMm}" fill="none"${dash}`;
+  return `stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"${dash}`;
 }
 
 function entityToSVG(e, doc, k, X, Y) {
@@ -117,27 +116,24 @@ function entityToSVG(e, doc, k, X, Y) {
   }
   if (e.type === 'hatch') {
     return hatchSegments(e.boundary, e.angleDeg, e.spacingMm / k)
-      .map(([a, b]) => `<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.25" fill="none"/>`)
+      .map(([a, b]) => `<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"/>`)
       .join('\n');
   }
   if (e.type === 'balloon') {
     const layout = balloonLayout(e, k);
     const parts = [];
-    parts.push(`<circle cx="${X(layout.circle.c.x)}" cy="${Y(layout.circle.c.y)}" r="${r2(layout.circle.r * k)}" stroke="black" stroke-width="0.25" fill="none"/>`);
-    parts.push(svgDimParts(layout, k, X, Y));
+    parts.push(`<circle cx="${X(layout.circle.c.x)}" cy="${Y(layout.circle.c.y)}" r="${r2(layout.circle.r * k)}" stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"/>`);
+    parts.push(svgDimParts(layout, k, X, Y, strokeWidthMm(e)));
     return parts.join('\n');
   }
   if (e.type === 'bom') {
     const layout = bomLayout(e, k);
     const parts = [];
     for (const [a, b] of [...layout.hLines, ...layout.vLines]) {
-      parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.35" fill="none"/>`);
+      parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"/>`);
     }
-    const pad = 1.5 / k;
-    for (const cell of [...layout.headers, ...layout.cells]) {
-      const tx = cell.rect.x + pad;
-      const ty = cell.rect.y + cell.rect.height / 2 - (DIM_TEXT_MM / k) * 0.35;
-      parts.push(`<text x="${X(tx)}" y="${Y(ty)}" font-size="${DIM_TEXT_MM}" fill="black">${esc(cell.text)}</text>`);
+    for (const t of layout.texts) {
+      parts.push(`<text x="${X(t.x)}" y="${Y(t.y)}" font-size="${layout.textMm}" fill="black">${esc(t.content)}</text>`);
     }
     return parts.join('\n');
   }
@@ -147,16 +143,16 @@ function entityToSVG(e, doc, k, X, Y) {
     return `<polyline points="${pts}" ${strokeAttrs(e)}/>`;
   }
   if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
-    return svgDimParts(annotationLayout(e, k), k, X, Y);
+    return svgDimParts(annotationLayout(e, k), k, X, Y, strokeWidthMm(e));
   }
   return '';
 }
 
 // 寸法・引出線・バルーンで共通の 線+円弧+矢印+文字 のSVG化
-function svgDimParts(layout, k, X, Y) {
+function svgDimParts(layout, k, X, Y, widthMm) {
   const parts = [];
   for (const [a, b] of layout.lines) {
-    parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="0.25" fill="none"/>`);
+    parts.push(`<line x1="${X(a.x)}" y1="${Y(a.y)}" x2="${X(b.x)}" y2="${Y(b.y)}" stroke="black" stroke-width="${widthMm}" fill="none"/>`);
   }
   for (const arc of layout.arcs ?? []) {
     const sx = X(arc.c.x + arc.r * Math.cos(arc.startDeg * DEG));
@@ -164,7 +160,7 @@ function svgDimParts(layout, k, X, Y) {
     const ex = X(arc.c.x + arc.r * Math.cos(arc.endDeg * DEG));
     const ey = Y(arc.c.y + arc.r * Math.sin(arc.endDeg * DEG));
     const large = arc.endDeg - arc.startDeg > 180 ? 1 : 0;
-    parts.push(`<path d="M ${sx} ${sy} A ${r2(arc.r * k)} ${r2(arc.r * k)} 0 ${large} 0 ${ex} ${ey}" stroke="black" stroke-width="0.25" fill="none"/>`);
+    parts.push(`<path d="M ${sx} ${sy} A ${r2(arc.r * k)} ${r2(arc.r * k)} 0 ${large} 0 ${ex} ${ey}" stroke="black" stroke-width="${widthMm}" fill="none"/>`);
   }
   for (const a of layout.arrows) {
     const tipX = X(a.at.x);
@@ -181,7 +177,7 @@ function svgDimParts(layout, k, X, Y) {
   for (const t of layout.texts) {
     const anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
     const rot = t.angleDeg ? ` transform="rotate(${r2(-t.angleDeg)} ${X(t.x)} ${Y(t.y)})"` : '';
-    parts.push(`<text x="${X(t.x)}" y="${Y(t.y)}" font-size="${DIM_TEXT_MM}" text-anchor="${anchor}" fill="black"${rot}>${esc(t.content)}</text>`);
+    parts.push(`<text x="${X(t.x)}" y="${Y(t.y)}" font-size="${layout.textMm}" text-anchor="${anchor}" fill="black"${rot}>${esc(t.content)}</text>`);
   }
   return parts.join('\n');
 }
