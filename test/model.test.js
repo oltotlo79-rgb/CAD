@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import {
   createDocument, addEntity, removeEntities, translateEntities,
   duplicateEntities, entitySegments, parseScale, formatScale, DEFAULT_LAYERS,
-  rotate90Entities, mirrorEntities, entitySnapPoints, entityBounds, hitTestEntity,
+  rotate90Entities, rotateEntities, scaleEntities,
+  mirrorEntities, entitySnapPoints, entityBounds, hitTestEntity,
   LINE_STYLES, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment, ellipsePoint,
 } from '../src/model.js';
+import { dimText, dimLayout } from '../src/dims.js';
+import { hatchSegments } from '../src/hatch.js';
+
+const approx = (a, b, eps = 1e-5) => Math.abs(a - b) < eps;
 
 test('createDocument: 仕様どおりの既定値', () => {
   const doc = createDocument();
@@ -103,6 +108,122 @@ test('rotate90Entities: 線分・矩形・円弧・楕円が90°回転する', (
   assert.deepEqual([a.cx, a.cy, a.startAngle, a.endAngle], [0, 10, 90, 180]);
   // 楕円: rx/ryは維持し rotation で表現
   assert.deepEqual([e.rx, e.ry, e.rotation], [8, 3, 90]);
+});
+
+test('rotateEntities: 任意角度で線・矩形・円弧・楕円・文字が回転する', () => {
+  const doc = createDocument();
+  const l = addEntity(doc, { type: 'line', x1: 10, y1: 0, x2: 20, y2: 0 });
+  const r = addEntity(doc, { type: 'rect', x: 10, y: 0, width: 10, height: 4 });
+  const a = addEntity(doc, { type: 'arc', cx: 10, cy: 0, r: 5, startAngle: 0, endAngle: 90 });
+  const e = addEntity(doc, { type: 'ellipse', cx: 0, cy: 0, rx: 8, ry: 3, rotation: 350 });
+  const t = addEntity(doc, { type: 'text', x: 10, y: 0, content: 'A', height: 3.5 });
+  rotateEntities(doc, [l.id, r.id, a.id, e.id, t.id], { x: 0, y: 0 }, 45);
+  const h = Math.SQRT1_2;
+  assert.ok(approx(l.x1, 10 * h) && approx(l.y1, 10 * h) && approx(l.x2, 20 * h) && approx(l.y2, 20 * h));
+  assert.ok(approx(r.x, 10 * h) && approx(r.y, 10 * h));
+  assert.equal(r.rotation, 45);
+  assert.deepEqual([a.startAngle, a.endAngle], [45, 135]);
+  assert.equal(e.rotation, 35); // 350+45 は 0〜360 に正規化
+  assert.equal(t.rotation, 45);
+});
+
+test('rotateEntities: 90°は誤差なく回り、-90°は時計回り', () => {
+  const doc = createDocument();
+  const l = addEntity(doc, { type: 'line', x1: 10, y1: 0, x2: 20, y2: 0 });
+  rotateEntities(doc, [l.id], { x: 0, y: 0 }, -90);
+  assert.deepEqual([l.x1, l.y1, l.x2, l.y2], [0, -10, 0, -20]);
+});
+
+test('rotateEntities: 寸法・引出線・バルーンも一緒に回り、寸法値は変わらない', () => {
+  const doc = createDocument();
+  const d = addEntity(doc, {
+    type: 'dim', dimType: 'linear', orient: 'h', p1: [10, 0], p2: [60, 0], offset: 20, textShift: 10,
+  });
+  const dia = addEntity(doc, { type: 'dim', dimType: 'dia', cx: 10, cy: 0, r: 5, angleDeg: 30 });
+  const ld = addEntity(doc, { type: 'leader', points: [[10, 0], [20, 10]], content: 'M6' });
+  const b = addEntity(doc, { type: 'balloon', number: 1, at: [10, 0], pos: [20, 0] });
+  rotateEntities(doc, [d.id, dia.id, ld.id, b.id], { x: 0, y: 0 }, 90);
+  // 水平寸法 → 垂直寸法(寸法線の位置・値のずれも保つ)
+  assert.equal(d.orient, 'v');
+  assert.deepEqual([d.p1, d.p2, d.offset, d.textShift], [[0, 10], [0, 60], -20, 10]);
+  assert.equal(dimText(d), '50');
+  assert.deepEqual([dia.cx, dia.cy, dia.angleDeg], [0, 10, 120]);
+  assert.deepEqual(ld.points, [[0, 10], [-10, 20]]);
+  assert.deepEqual([b.at, b.pos], [[0, 10], [0, 20]]);
+});
+
+test('rotateEntities: 90°の倍数以外では水平寸法は平行寸法になり、位置と値を保つ', () => {
+  const doc = createDocument();
+  const d = addEntity(doc, {
+    type: 'dim', dimType: 'linear', orient: 'h', p1: [10, 0], p2: [60, 0], offset: 20, textShift: 5,
+  });
+  const before = dimLayout(d, 1).texts[0];
+  rotateEntities(doc, [d.id], { x: 0, y: 0 }, 30);
+  assert.equal(d.orient, 'aligned');
+  assert.equal(dimText(d), '50');
+  // 文字位置は元の位置を30°回した所
+  const after = dimLayout(d, 1).texts[0];
+  const c = Math.cos(Math.PI / 6);
+  const s = Math.sin(Math.PI / 6);
+  assert.ok(approx(after.x, before.x * c - before.y * s) && approx(after.y, before.x * s + before.y * c));
+  assert.ok(approx(after.angleDeg, 30));
+});
+
+test('rotateEntities: ハッチの矩形境界は斜めになると多角形に変わり、斜線も一緒に回る', () => {
+  const doc = createDocument();
+  const hatch = addEntity(doc, {
+    type: 'hatch', boundary: { kind: 'rect', x: 0, y: 0, width: 20, height: 10 }, angleDeg: 45, spacingMm: 3,
+  });
+  rotateEntities(doc, [hatch.id], { x: 0, y: 0 }, 30);
+  assert.equal(hatch.boundary.kind, 'polyline');
+  assert.equal(hatch.boundary.points.length, 4);
+  assert.equal(hatch.angleDeg, 75);
+  assert.ok(hatchSegments(hatch.boundary, hatch.angleDeg, 3).length > 0);
+});
+
+test('scaleEntities: 基準点から倍率で拡大し、文字の大きさは変えない', () => {
+  const doc = createDocument();
+  const center = { x: 10, y: 10 };
+  const l = addEntity(doc, { type: 'line', x1: 10, y1: 10, x2: 20, y2: 10 });
+  const c = addEntity(doc, { type: 'circle', cx: 20, cy: 20, r: 5 });
+  const r = addEntity(doc, { type: 'rect', x: 10, y: 10, width: 10, height: 4, rotation: 30 });
+  const el = addEntity(doc, { type: 'ellipse', cx: 10, cy: 10, rx: 8, ry: 3 });
+  const t = addEntity(doc, { type: 'text', x: 20, y: 10, content: 'A', height: 3.5 });
+  const hatch = addEntity(doc, {
+    type: 'hatch', boundary: { kind: 'circle', cx: 20, cy: 20, r: 5 }, angleDeg: 45, spacingMm: 3,
+  });
+  scaleEntities(doc, [l.id, c.id, r.id, el.id, t.id, hatch.id], center, 2);
+  assert.deepEqual([l.x1, l.y1, l.x2, l.y2], [10, 10, 30, 10]);
+  assert.deepEqual([c.cx, c.cy, c.r], [30, 30, 10]);
+  assert.deepEqual([r.x, r.y, r.width, r.height, r.rotation], [10, 10, 20, 8, 30]);
+  assert.deepEqual([el.rx, el.ry], [16, 6]);
+  assert.deepEqual([t.x, t.y, t.height], [30, 10, 3.5]);
+  assert.deepEqual([hatch.boundary.cx, hatch.boundary.r, hatch.spacingMm], [30, 10, 3]);
+});
+
+test('scaleEntities: 寸法は測る点・寸法線の位置・値のずれが拡大され、値も倍になる', () => {
+  const doc = createDocument();
+  const d = addEntity(doc, {
+    type: 'dim', dimType: 'linear', orient: 'h', p1: [10, 0], p2: [60, 0], offset: 20, textShift: 5,
+  });
+  const ang = addEntity(doc, { type: 'dim', dimType: 'angle', vertex: [0, 0], p1: [10, 0], p2: [0, 10], radius: 8 });
+  const ch = addEntity(doc, { type: 'dim', dimType: 'chamfer', p1: [0, 5], p2: [5, 0], tail: [10, 10], size: 5 });
+  scaleEntities(doc, [d.id, ang.id, ch.id], { x: 0, y: 0 }, 0.5);
+  assert.deepEqual([d.p1, d.p2, d.offset, d.textShift], [[5, 0], [30, 0], 10, 2.5]);
+  assert.equal(dimText(d), '25');
+  assert.equal(ang.radius, 4);
+  assert.deepEqual([ch.tail, ch.size], [[5, 5], 2.5]);
+});
+
+test('mirrorEntities: 寸法の値のずれは向きに合わせて反転する', () => {
+  const doc = createDocument();
+  const d = addEntity(doc, {
+    type: 'dim', dimType: 'linear', orient: 'h', p1: [10, 0], p2: [60, 0], offset: 20, textShift: 10,
+  });
+  mirrorEntities(doc, [d.id], 'x', { x: 50, y: 0 });
+  assert.equal(d.textShift, -10); // 右寄りの値は左右反転で左寄りに
+  mirrorEntities(doc, [d.id], 'y', { x: 0, y: 0 });
+  assert.equal(d.textShift, -10); // 上下反転では左右の位置は変わらない
 });
 
 test('mirrorEntities: 左右反転で線分・矩形・円弧が鏡映される', () => {

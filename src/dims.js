@@ -36,6 +36,41 @@ export function dimText(e) {
   return '';
 }
 
+// 長さ寸法の寸法線の向き(単位ベクトル)。値のずれ textShift はこの向きの実寸mm
+export function dimAxis(e) {
+  if (e.orient === 'h') return { x: 1, y: 0 };
+  if (e.orient === 'v') return { x: 0, y: 1 };
+  const len = Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1]) || 1;
+  return { x: (e.p2[0] - e.p1[0]) / len, y: (e.p2[1] - e.p1[1]) / len };
+}
+
+// 点 p を寸法線の向きに投影した、寸法線の中央からのずれ(値のドラッグ移動に使う)
+export function dimShiftAt(e, p) {
+  const u = dimAxis(e);
+  const mx = (e.p1[0] + e.p2[0]) / 2;
+  const my = (e.p1[1] + e.p2[1]) / 2;
+  return (p.x - mx) * u.x + (p.y - my) * u.y;
+}
+
+// 文字(基準位置 t・高さ textH)の枠に点 p が入るか。回転した文字にも対応
+export function textBoxHit(t, textH, p, tolMm) {
+  const w = t.content.length * textH;
+  const r = (t.angleDeg || 0) * DEG;
+  const dx = p.x - t.x;
+  const dy = p.y - t.y;
+  const lx = dx * Math.cos(r) + dy * Math.sin(r);
+  const ly = -dx * Math.sin(r) + dy * Math.cos(r);
+  const x0 = t.align === 'center' ? -w / 2 : t.align === 'right' ? -w : 0;
+  return lx >= x0 - tolMm && lx <= x0 + w + tolMm && ly >= -tolMm && ly <= textH + tolMm;
+}
+
+// 長さ寸法の値(文字)の上か。値だけを寸法線に沿って動かす操作の判定に使う
+export function dimTextHit(e, p, tolMm, k = 1) {
+  if (e.type !== 'dim' || e.dimType !== 'linear') return false;
+  const layout = dimLayout(e, k);
+  return textBoxHit(layout.texts[0], layout.textMm / k, p, tolMm);
+}
+
 function angleSweep(e) {
   const v = { x: e.vertex[0], y: e.vertex[1] };
   const a1 = angleDegOf(v, { x: e.p1[0], y: e.p1[1] });
@@ -166,28 +201,26 @@ export function dimLayout(e, k = 1) {
   if (e.dimType === 'linear') {
     const [x1, y1] = e.p1;
     const [x2, y2] = e.p2;
+    // a→b: 寸法線(補助線との交点どうし)。textOff: 寸法線から文字までの隙間
+    let a; let b; let textOff; let textAngle;
     if (e.orient === 'h') {
       const y = e.offset;
       const sgn = y >= Math.max(y1, y2) ? 1 : -1;
       lines.push([{ x: x1, y: y1 }, { x: x1, y: y + sgn * ext }]);
       lines.push([{ x: x2, y: y2 }, { x: x2, y: y + sgn * ext }]);
-      const xa = Math.min(x1, x2);
-      const xb = Math.max(x1, x2);
-      lines.push([{ x: xa, y }, { x: xb, y }]);
-      arrows.push({ at: { x: xa, y }, angleDeg: 180 });
-      arrows.push({ at: { x: xb, y }, angleDeg: 0 });
-      texts.push({ x: (xa + xb) / 2, y: y + gap, content: text, angleDeg: 0, align: 'center' });
+      a = { x: Math.min(x1, x2), y };
+      b = { x: Math.max(x1, x2), y };
+      textOff = { x: 0, y: gap };
+      textAngle = 0;
     } else if (e.orient === 'v') {
       const x = e.offset;
       const sgn = x >= Math.max(x1, x2) ? 1 : -1;
-      const ya = Math.min(y1, y2);
-      const yb = Math.max(y1, y2);
       lines.push([{ x: x1, y: y1 }, { x: x + sgn * ext, y: y1 }]);
       lines.push([{ x: x2, y: y2 }, { x: x + sgn * ext, y: y2 }]);
-      lines.push([{ x, y: ya }, { x, y: yb }]);
-      arrows.push({ at: { x, y: ya }, angleDeg: 270 });
-      arrows.push({ at: { x, y: yb }, angleDeg: 90 });
-      texts.push({ x: x - gap, y: (ya + yb) / 2, content: text, angleDeg: 90, align: 'center' });
+      a = { x, y: Math.min(y1, y2) };
+      b = { x, y: Math.max(y1, y2) };
+      textOff = { x: -gap, y: 0 };
+      textAngle = 90;
     } else { // aligned(平行寸法)
       const p1 = { x: x1, y: y1 };
       const p2 = { x: x2, y: y2 };
@@ -196,20 +229,37 @@ export function dimLayout(e, k = 1) {
       const ny = (x2 - x1) / len;
       const off = e.offset;
       const sgn = Math.sign(off) || 1;
-      const a = { x: x1 + nx * off, y: y1 + ny * off };
-      const b = { x: x2 + nx * off, y: y2 + ny * off };
+      a = { x: x1 + nx * off, y: y1 + ny * off };
+      b = { x: x2 + nx * off, y: y2 + ny * off };
       lines.push([p1, { x: x1 + nx * (off + sgn * ext), y: y1 + ny * (off + sgn * ext) }]);
       lines.push([p2, { x: x2 + nx * (off + sgn * ext), y: y2 + ny * (off + sgn * ext) }]);
-      lines.push([a, b]);
-      const ang = angleDegOf(p1, p2);
-      arrows.push({ at: a, angleDeg: ang + 180 });
-      arrows.push({ at: b, angleDeg: ang });
-      texts.push({
-        x: (a.x + b.x) / 2 + nx * gap * sgn,
-        y: (a.y + b.y) / 2 + ny * gap * sgn,
-        content: text, angleDeg: ang, align: 'center',
-      });
+      textOff = { x: nx * gap * sgn, y: ny * gap * sgn };
+      textAngle = angleDegOf(p1, p2);
     }
+    // 値は textShift だけ寸法線に沿って中央からずらせる。補助線の外に出たら
+    // 寸法線を値の外端まで延ばし、矢印を外側から内向きにする
+    const u = dimAxis(e);
+    const angU = Math.atan2(u.y, u.x) / DEG;
+    const half = distance(a, b) / 2;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const at = (s) => ({ x: mid.x + u.x * s, y: mid.y + u.y * s });
+    const shift = Number(e.textShift) || 0;
+    if (Math.abs(shift) <= half) {
+      lines.push([a, b]);
+      arrows.push({ at: a, angleDeg: angU + 180 });
+      arrows.push({ at: b, angleDeg: angU });
+    } else {
+      const dir = Math.sign(shift);
+      const tail = (DIM_ARROW_MM * 2) / k;                 // 反対側の矢印の軸
+      const textHalf = text.length * textH * 0.3;           // 文字幅(1文字≒高さ×0.6)の半分
+      lines.push([at(-dir * (half + tail)), at(dir * (Math.abs(shift) + textHalf))]);
+      arrows.push({ at: a, angleDeg: angU });
+      arrows.push({ at: b, angleDeg: angU + 180 });
+    }
+    const tp = at(shift);
+    texts.push({
+      x: tp.x + textOff.x, y: tp.y + textOff.y, content: text, angleDeg: textAngle, align: 'center',
+    });
     return { lines, arrows, texts, textMm };
   }
 

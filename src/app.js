@@ -5,16 +5,25 @@ import * as geo from './geometry.js';
 import {
   createDocument, addEntity, removeEntities, translateEntities,
   duplicateEntities, parseScale, formatScale,
-  rotate90Entities, entityBounds, hitTestEntity, STYLE_PRESETS,
+  rotateEntities, scaleEntities, entityBounds, hitTestEntity, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment,
   entitySegments,
 } from './model.js';
 import { findSnap } from './snap.js';
-import { dimText, DIM_TEXT_MM } from './dims.js';
+import {
+  dimText, DIM_TEXT_MM, dimTextHit, dimShiftAt, fmtMm,
+} from './dims.js';
 import {
   WIDTH_CHOICES_MM, TEXT_CHOICES_MM, hasStroke, hasText, widthSettingMm, textHeightMm,
   applyWidth, applyTextHeight, commonValue, strokeStyleOf,
+  hasLineType, presetOf, applyPreset,
 } from './entityStyle.js';
+import {
+  toolForKey, tooltipText, guideFor, toolAccepts,
+} from './toolInfo.js';
+import { buildContextMenu } from './menuModel.js';
+import { createPopupMenu } from './popupMenu.js';
+import { createHelp, helpTopicForTool } from './helpView.js';
 import { projectionGuides, guideSnapCandidates } from './guides.js';
 import { toSVG } from './svgExport.js';
 import { titleBlockLayout } from './titleBlock.js';
@@ -64,9 +73,15 @@ const state = {
   message: null,   // ステータスバーの操作ガイド
   midGuides: [],   // 中心線モードで表示する近傍の中点ガイド
   mouseReal: null,
-  // 次に作る図形の線の太さ・文字高さ(用紙mm)。ツールの種類ごとに覚える(widthMm:null=標準)
+  hover: null,       // マウスを乗せている(クリックできる)図形のid
+  hoverDimText: false, // 選択ツールで寸法の値の上にマウスがあるか
+  mouseScreen: null, // キャンバス上のマウス位置(操作ガイドの表示位置)
+  dimTextDrag: null, // 寸法の値のドラッグ { id, snapshotPushed }
+  rightPress: null,  // 右ボタンを押した画面位置(動かさずに離したらメニュー)
+  showGuide: true,   // カーソル横の操作ガイド
+  // 次に作る図形の線種・線の太さ・文字高さ(用紙mm)。ツールの種類ごとに覚える(widthMm:null=標準)
   pen: {
-    shape: { widthMm: null },                     // 直線・円などの図形
+    shape: { preset: 'outline', widthMm: null },  // 直線・円などの図形
     text: { textMm: DIM_TEXT_MM },                // 文字
     anno: { widthMm: null, textMm: DIM_TEXT_MM }, // 寸法・記号・バルーン・部品表・ハッチ
   },
@@ -107,7 +122,7 @@ function originToAbs(p) {
 const DRAW_TOOLS = ['line', 'polyline', 'spline', 'rect', 'circle', 'arc', 'ellipse', 'earc'];
 const MID_GUIDE_SKIP = ['dim', 'leader', 'bom', 'balloon', 'hatch', 'text', 'roughness', 'fcf'];
 function centerMidGuides(cursor) {
-  if (el('line-style').value !== 'center' || !DRAW_TOOLS.includes(state.tool)) return [];
+  if (state.pen.shape.preset !== 'center' || !DRAW_TOOLS.includes(state.tool)) return [];
   const k = vt.scaleK(state.doc.scale);
   const range = 60 / pxPerRealMm(); // カーソル周辺60px
   const out = [];
@@ -136,7 +151,7 @@ function currentGuides() {
 function resolvePoint(s) {
   const raw = screenToReal(s);
   const tolMm = 10 / pxPerRealMm();
-  const centerMode = el('line-style').value === 'center' && DRAW_TOOLS.includes(state.tool);
+  const centerMode = state.pen.shape.preset === 'center' && DRAW_TOOLS.includes(state.tool);
   // 中心線モード: 中点そのもの、または中点を通る水平/垂直の軸ガイドに吸着。
   // 軸上ならどこでも良い(=図形の外へはみ出して中心線を引ける)
   if (centerMode && state.midGuides.length > 0) {
@@ -185,7 +200,7 @@ function resolvePoint(s) {
 // 作図中の線種プリセット・太さ → エンティティ属性
 const widthProp = (pen) => (pen.widthMm ? { widthMm: pen.widthMm } : {});
 function styleProps() {
-  const preset = STYLE_PRESETS[el('line-style').value] ?? STYLE_PRESETS.outline;
+  const preset = STYLE_PRESETS[state.pen.shape.preset] ?? STYLE_PRESETS.outline;
   return { lineType: preset.lineType, layer: preset.layer, ...widthProp(state.pen.shape) };
 }
 // 寸法・記号・部品表の属性(細線。太さ・文字高さは注記ツールの設定、3.5mmは既定なので省略)
@@ -224,6 +239,7 @@ function render() {
   syncNumPanel();
   syncStyleUI();
   updateScrollbars();
+  updateCursorTip();
 }
 
 // ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
@@ -533,6 +549,17 @@ function movePan(s) {
   render();
 }
 
+// ---- ツールバーのタブ ----
+function activateTab(name) {
+  document.querySelectorAll('#tabs .tab').forEach((t) =>
+    t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('#ribbon .panel').forEach((p) =>
+    p.classList.toggle('active', p.dataset.panel === name));
+  try { localStorage.setItem('seizu.tab', name); } catch { /* 保存できなくても動作は続ける */ }
+}
+document.querySelectorAll('#tabs .tab').forEach((t) =>
+  t.addEventListener('click', () => activateTab(t.dataset.tab)));
+
 // ---- ツール ----
 function setTool(tool) {
   state.tool = tool;
@@ -540,12 +567,18 @@ function setTool(tool) {
   state.filletFirst = null;
   state.offsetPick = null;
   state.subSel = null;
+  state.hover = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
+  // キー操作で選んだツールも見えるよう、そのボタンがあるタブを開く
+  const panel = document.querySelector(`#ribbon .panel [data-tool="${tool}"]`)?.closest('.panel');
+  if (panel) activateTab(panel.dataset.panel);
   render();
 }
-document.querySelectorAll('#toolbar .tool').forEach((b) =>
-  b.addEventListener('click', () => setTool(b.dataset.tool)));
+document.querySelectorAll('#toolbar .tool').forEach((b) => {
+  b.title = tooltipText(b.dataset.tool);
+  b.addEventListener('click', () => setTool(b.dataset.tool));
+});
 
 function commitLine(a, b) {
   if (a.x === b.x && a.y === b.y) return;
@@ -579,18 +612,23 @@ function finishPolyline() {
     render();
   }
 }
+// 寸法値・文字・バルーン番号などの書き換え入力を開く
+const VALUE_EDITABLE = ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'];
+function openValueEditor(hit, s) {
+  const initial = hit.type === 'dim' ? dimText(hit)
+    : hit.type === 'balloon' ? String(hit.number)
+    : hit.type === 'roughness' ? hit.value
+    : hit.type === 'fcf' ? hit.cells.join('|')
+    : hit.content;
+  openTextEntry(s, 'edit', { id: hit.id }, initial);
+}
 canvas.addEventListener('dblclick', (ev) => {
   if (state.tool === 'select') {
     const s = eventScreen(ev);
     const hit = hitTestScreen(s);
-    if (hit && ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'].includes(hit.type)) {
+    if (hit && VALUE_EDITABLE.includes(hit.type)) {
       ev.preventDefault();
-      const initial = hit.type === 'dim' ? dimText(hit)
-        : hit.type === 'balloon' ? String(hit.number)
-        : hit.type === 'roughness' ? hit.value
-        : hit.type === 'fcf' ? hit.cells.join('|')
-        : hit.content;
-      openTextEntry(s, 'edit', { id: hit.id }, initial);
+      openValueEditor(hit, s);
       return;
     }
     if (hit && hit.type === 'bom') {
@@ -667,7 +705,13 @@ function handleToolPointerDown(s, ev) {
         // 選択済みの連続線/スプラインをもう一度クリック → 最寄りの線分を選択
         state.subSel = nearestPolySegment(hit, screenToReal(s));
       }
-      state.moveDrag = { lastReal: p, snapshotPushed: false };
+      if (!ev.shiftKey && isOverDimText(hit, s)) {
+        // 長さ寸法の値を掴んだら、値だけを寸法線に沿って動かす
+        state.selection = new Set([hit.id]);
+        state.dimTextDrag = { id: hit.id, snapshotPushed: false };
+      } else {
+        state.moveDrag = { lastReal: p, startReal: p, snapshotPushed: false };
+      }
     } else {
       if (!ev.shiftKey) {
         state.selection.clear();
@@ -1043,8 +1087,34 @@ function handleToolPointerDown(s, ev) {
   }
 }
 
+function isOverDimText(e, s) {
+  return dimTextHit(e, screenToReal(s), 3 / pxPerRealMm(), vt.scaleK(state.doc.scale));
+}
+
+// 寸法の値のドラッグ: マウス位置を寸法線の向きに投影した位置へ。中央付近は中央に吸着
+function moveDimText(s) {
+  const drag = state.dimTextDrag;
+  const e = state.doc.entities.find((en) => en.id === drag.id);
+  if (!e) return;
+  let shift = dimShiftAt(e, screenToReal(s));
+  if (Math.abs(shift) < 8 / pxPerRealMm()) shift = 0;
+  shift = Math.round(shift * 100) / 100;
+  if (shift === (Number(e.textShift) || 0)) return;
+  if (!drag.snapshotPushed) {
+    pushSnapshot(state.history, snapshot(state.doc));
+    drag.snapshotPushed = true;
+    markDirty();
+  }
+  if (shift) e.textShift = shift;
+  else delete e.textShift;
+}
+
 function handleToolPointerMove(s) {
   const p = state.mouseReal;
+  if (state.dimTextDrag) {
+    moveDimText(s);
+    return;
+  }
   if (state.moveDrag) {
     const dx = p.x - state.moveDrag.lastReal.x;
     const dy = p.y - state.moveDrag.lastReal.y;
@@ -1066,8 +1136,12 @@ function handleToolPointerMove(s) {
   if (state.draft) {
     state.draft.current = p;
     if (state.draft.kind === 'line') {
-      el('num-len').value = geo.distance(state.draft.start, p).toFixed(2);
-      el('num-ang').value = geo.angleDegOf(state.draft.start, p).toFixed(1);
+      // 長さ・角度を打ち込み中の欄は上書きしない
+      const active = document.activeElement;
+      if (active !== el('num-len') && active !== el('num-ang')) {
+        el('num-len').value = geo.distance(state.draft.start, p).toFixed(2);
+        el('num-ang').value = geo.angleDegOf(state.draft.start, p).toFixed(1);
+      }
     } else if (state.draft.kind === 'dim' && state.draft.stage === 2) {
       const pl = dimPlacement(state.draft.p1, state.draft.p2, p, false);
       state.draft.orient = pl.orient;
@@ -1077,6 +1151,11 @@ function handleToolPointerMove(s) {
 }
 
 function handleToolPointerUp() {
+  if (state.dimTextDrag) {
+    state.dimTextDrag = null;
+    render();
+    return;
+  }
   if (state.moveDrag) {
     if (state.moveDrag.snapshotPushed) lastPanelKey = null; // ドラッグ移動後に値を更新
     state.moveDrag = null;
@@ -1100,7 +1179,8 @@ canvas.addEventListener('pointerdown', (ev) => {
     return;
   }
   if (ev.button === 2) {
-    // 右ドラッグ: 図形を掴んで離した位置に複製
+    // 右ボタン: 動かさずに離せばメニュー、図形を掴んでドラッグすれば離した位置に複製
+    state.rightPress = { screen: s };
     const hit = hitTestScreen(s);
     if (hit) {
       const ids = state.selection.has(hit.id) ? [...state.selection] : [hit.id];
@@ -1116,9 +1196,18 @@ canvas.addEventListener('pointerdown', (ev) => {
   if (ev.button !== 0) return;
   handleToolPointerDown(s, ev);
 });
+// マウスを乗せた図形のうち、今のツールでクリックできるものを強調する
+function updateHover(s) {
+  const busy = state.moveDrag || state.dimTextDrag || state.copyDrag || state.draft?.kind === 'box';
+  const hit = busy ? null : hitTestScreen(s);
+  state.hover = hit && toolAccepts(state.tool, hit) ? hit.id : null;
+  state.hoverDimText = !!hit && state.tool === 'select' && isOverDimText(hit, s);
+}
+
 canvas.addEventListener('pointermove', (ev) => {
   if (!state.view) return;
   const s = eventScreen(ev);
+  state.mouseScreen = s;
   if (state.panDrag) {
     state.mouseReal = screenToReal(s);
     movePan(s);
@@ -1139,12 +1228,29 @@ canvas.addEventListener('pointermove', (ev) => {
     state.mouseReal = resolvePoint(s);
   }
   handleToolPointerMove(s);
+  updateHover(s);
+  render();
+});
+canvas.addEventListener('pointerleave', () => {
+  state.mouseScreen = null;
+  state.hover = null;
   render();
 });
 canvas.addEventListener('pointerup', (ev) => {
   if (state.panDrag) {
     state.panDrag = null;
     return;
+  }
+  const press = state.rightPress;
+  state.rightPress = null;
+  if (ev.button === 2 && press) {
+    const s = eventScreen(ev);
+    if (Math.hypot(s.x - press.screen.x, s.y - press.screen.y) < 5) {
+      state.copyDrag = null;
+      openCanvasMenu(s, ev);
+      render();
+      return;
+    }
   }
   if (state.copyDrag) {
     const d = state.copyDrag;
@@ -1237,12 +1343,46 @@ function pasteClipboard() {
   state.selection = new Set(ids);
   render();
 }
-function rotateSelection() {
-  if (state.selection.size === 0) return;
+// ---- 回転・拡大縮小(選択範囲の中心が基準) ----
+function rotateSelectionBy(deg) {
+  if (state.selection.size === 0) {
+    showMessage('回転: 先に回したい図形をクリックして選んでください');
+    return;
+  }
+  if (!Number.isFinite(deg) || deg === 0) {
+    showMessage('回転: 角度を数字で入れてください（例: 90 で左回り、-45 で右回り）');
+    return;
+  }
   const center = selectionCenter();
-  commit(() => rotate90Entities(state.doc, [...state.selection], center));
+  commit(() => rotateEntities(state.doc, [...state.selection], center, deg));
 }
-el('rotate').addEventListener('click', rotateSelection);
+function scaleSelectionBy(f) {
+  if (state.selection.size === 0) {
+    showMessage('拡大縮小: 先に図形をクリックして選んでください');
+    return;
+  }
+  if (!(f > 0)) {
+    showMessage('拡大縮小: 倍率を0より大きい数字で入れてください（例: 2 で2倍、0.5 で半分）');
+    return;
+  }
+  if (f === 1) return;
+  const center = selectionCenter();
+  commit(() => scaleEntities(state.doc, [...state.selection], center, f));
+}
+el('rotate').addEventListener('click', () => rotateSelectionBy(Number(el('rotate-angle').value)));
+el('scale').addEventListener('click', () => scaleSelectionBy(Number(el('scale-factor').value)));
+// 角度・倍率の欄で Enter でも実行
+el('rotate-angle').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') el('rotate').click(); });
+el('scale-factor').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') el('scale').click(); });
+
+function selectAll() {
+  if (state.tool !== 'select') setTool('select');
+  const visible = new Map(state.doc.layers.map((l) => [l.id, l.visible]));
+  state.selection = new Set(state.doc.entities
+    .filter((e) => visible.get(e.layer) !== false).map((e) => e.id));
+  state.subSel = null;
+  render();
+}
 
 function selectionCenter() {
   const k = vt.scaleK(state.doc.scale);
@@ -1521,12 +1661,18 @@ el('show45').addEventListener('change', () => {
   render();
 });
 
-// ---- 線の太さ・文字高さ ----
+el('show-guide').addEventListener('change', () => {
+  state.showGuide = el('show-guide').checked;
+  try { localStorage.setItem('seizu.showGuide', state.showGuide ? '1' : '0'); } catch { /* 無視 */ }
+  render();
+});
+
+// ---- 線種・線の太さ・文字高さ ----
 // 選択ツールで図形を選択中は「選択図形の値」を表示・変更し、
 // それ以外は「そのツールで次に作る図形の設定」を表示・変更する(ツールの種類ごとに記憶)
 const ANNO_TOOLS = ['dim', 'dia', 'rad', 'angle', 'chamfer', 'leader', 'roughness', 'fcf', 'balloon', 'bom'];
 function toolPen(tool) {
-  if (DRAW_TOOLS.includes(tool)) return { pen: state.pen.shape, width: true, text: false };
+  if (DRAW_TOOLS.includes(tool)) return { pen: state.pen.shape, width: true, text: false, lineType: true };
   if (tool === 'text') return { pen: state.pen.text, width: false, text: true };
   if (ANNO_TOOLS.includes(tool)) return { pen: state.pen.anno, width: true, text: true };
   if (tool === 'hatch') return { pen: state.pen.anno, width: true, text: false };
@@ -1541,7 +1687,7 @@ function buildStyleOptions() {
     opt.hidden = hidden;
     select.add(opt);
   };
-  for (const select of [el('line-width'), el('text-size')]) {
+  for (const select of [el('line-style'), el('line-width'), el('text-size')]) {
     add(select, '—', 'none', true);    // 対象外(無効)のときの表示
     add(select, '混在', 'mixed', true); // 選択図形で値がばらばらのときの表示
   }
@@ -1562,41 +1708,238 @@ function showStyleValue(select, info) {
   if (select.value !== v) select.value = v;
 }
 function syncStyleUI() {
+  let lineType = null;
   let width = null;
   let text = null;
   if (editingSelection()) {
     const sel = state.doc.entities.filter((e) => state.selection.has(e.id));
+    lineType = commonValue(sel.filter(hasLineType), presetOf);
+    // 線種メニューにない組み合わせの図形は「混在」扱い
+    if (lineType && !lineType.mixed && lineType.value == null) lineType = { value: null, mixed: true };
     width = commonValue(sel.filter(hasStroke), widthSettingMm);
     text = commonValue(sel.filter(hasText), textHeightMm);
   } else {
     const t = toolPen(state.tool);
+    if (t?.lineType) lineType = { value: t.pen.preset, mixed: false };
     if (t?.width) width = { value: t.pen.widthMm, mixed: false };
     if (t?.text) text = { value: t.pen.textMm, mixed: false };
   }
+  showStyleValue(el('line-style'), lineType);
   showStyleValue(el('line-width'), width);
   showStyleValue(el('text-size'), text);
 }
+// 選択図形に線種(kind='lineType')・太さ('width')・文字高さ('text')を適用。対象がなければ false
+const STYLE_APPLY = {
+  lineType: [hasLineType, applyPreset],
+  width: [hasStroke, applyWidth],
+  text: [hasText, applyTextHeight],
+};
+function applyStyleToSelection(kind, value) {
+  const [applies, apply] = STYLE_APPLY[kind];
+  const targets = state.doc.entities.filter((e) => state.selection.has(e.id) && applies(e));
+  if (targets.length === 0) return false;
+  commit(() => { for (const e of targets) apply(e, value); });
+  return true;
+}
+const PEN_PROP = { lineType: 'preset', width: 'widthMm', text: 'textMm' };
 function changeStyle(kind, select) {
   const raw = select.value;
   select.blur(); // 変更後すぐ Delete・Ctrl+Z などのキー操作が図面に効くように
   if (raw === 'none' || raw === 'mixed') return;
-  const mm = raw === '' ? null : Number(raw);
+  const value = kind === 'lineType' ? raw : raw === '' ? null : Number(raw);
   if (editingSelection()) {
-    const applies = kind === 'width' ? hasStroke : hasText;
-    const apply = kind === 'width' ? applyWidth : applyTextHeight;
-    const targets = state.doc.entities.filter((e) => state.selection.has(e.id) && applies(e));
-    if (targets.length > 0) {
-      commit(() => { for (const e of targets) apply(e, mm); });
-      return;
-    }
+    if (applyStyleToSelection(kind, value)) return;
   } else {
     const t = toolPen(state.tool);
-    if (t?.[kind]) t.pen[kind === 'width' ? 'widthMm' : 'textMm'] = mm;
+    if (t?.[kind]) t.pen[PEN_PROP[kind]] = value;
   }
   render();
 }
+el('line-style').addEventListener('change', (ev) => changeStyle('lineType', ev.target));
 el('line-width').addEventListener('change', (ev) => changeStyle('width', ev.target));
 el('text-size').addEventListener('change', (ev) => changeStyle('text', ev.target));
+
+// ---- 右クリックメニュー ----
+let menuScreen = null; // メニューを開いた位置(書き換え入力の表示位置に使う)
+const popup = createPopupMenu(runMenuAction);
+function inProgress() {
+  return !!(state.draft && state.draft.kind !== 'box') || !!state.filletFirst || !!state.offsetPick;
+}
+function openCanvasMenu(s, ev) {
+  const hit = hitTestScreen(s);
+  if (hit && !state.selection.has(hit.id)) {
+    state.selection = new Set([hit.id]);
+    state.subSel = null;
+  }
+  const entities = hit ? state.doc.entities.filter((e) => state.selection.has(e.id)) : [];
+  menuScreen = s;
+  const drafting = inProgress() ? (state.draft?.kind ?? 'pick') : null;
+  popup.open(buildContextMenu({
+    entities, hasClipboard: !!state.clipboard?.length, tool: state.tool, drafting,
+  }), ev.clientX, ev.clientY);
+}
+// 図形の種類 → 説明するツール(ヘルプの項目選び)
+function toolOfEntity(e) {
+  if (e.type === 'dim') return e.dimType === 'linear' ? 'dim' : e.dimType;
+  if (e.type === 'ellipse' && e.startAngle != null) return 'earc';
+  return e.type;
+}
+function focusInput(input, message) {
+  activateTab('edit');
+  input.focus();
+  input.select();
+  showMessage(message);
+}
+function runMenuAction(id) {
+  const [cmd, arg] = id.split(':');
+  const selected = state.doc.entities.filter((e) => state.selection.has(e.id));
+  switch (cmd) {
+    case 'finishDraft': finishPolyline(); break;
+    case 'cancelDraft': cancelInProgress(); break;
+    case 'paste': pasteClipboard(); break;
+    case 'undo': doUndo(); break;
+    case 'redo': doRedo(); break;
+    case 'selectAll': selectAll(); break;
+    case 'fit': refitView(); render(); break;
+    case 'toSelect': setTool('select'); break;
+    case 'help': openHelp(selected.length ? helpTopicForTool(toolOfEntity(selected[0])) : null); break;
+    case 'copy': copySelection(); break;
+    case 'duplicate': duplicateSelection(); break;
+    case 'delete': deleteSelection(); break;
+    case 'rotateLeft': rotateSelectionBy(90); break;
+    case 'rotateRight': rotateSelectionBy(-90); break;
+    case 'rotateBy':
+      focusInput(el('rotate-angle'), '回転: 角度を入れて Enter（＋で左回り、－で右回り）');
+      break;
+    case 'scaleBy':
+      focusInput(el('scale-factor'), '拡大縮小: 倍率を入れて Enter（2で2倍、0.5で半分）');
+      break;
+    case 'mirrorX': mirrorSelection('x'); break;
+    case 'mirrorY': mirrorSelection('y'); break;
+    case 'explode': explodeSelection(); break;
+    case 'lineType': applyStyleToSelection('lineType', arg); break;
+    case 'width': applyStyleToSelection('width', arg === '' ? null : Number(arg)); break;
+    case 'textSize': applyStyleToSelection('text', Number(arg)); break;
+    case 'editText':
+      if (selected[0] && menuScreen) openValueEditor(selected[0], menuScreen);
+      break;
+    case 'resetDimText':
+      commit(() => {
+        for (const e of selected) if (e.type === 'dim') delete e.textShift;
+      });
+      break;
+    default: break;
+  }
+}
+
+// ---- ヘルプ ----
+const help = createHelp();
+function openHelp(topicId) {
+  popup.close();
+  help.open(topicId ?? undefined);
+}
+el('help-open').addEventListener('click', () => {
+  openHelp(state.tool === 'select' ? null : helpTopicForTool(state.tool));
+});
+
+// ---- カーソル横の操作ガイド ----
+// 作図の段階(何回クリックしたか)
+function draftStage() {
+  if (state.tool === 'offset') return state.offsetPick ? 1 : 0;
+  if (state.tool === 'fillet' || state.tool === 'chamferEdit') return state.filletFirst ? 1 : 0;
+  const d = state.draft;
+  if (!d || d.kind === 'box') return 0;
+  if (d.kind === 'polyline' || d.kind === 'spline') return d.points.length;
+  if (d.stage) return d.stage;
+  if (d.kind === 'angle') return d.p1 ? 2 : 1;
+  return 1;
+}
+// 作図中・移動中の長さなどの値
+function liveValues() {
+  const p = state.mouseReal;
+  const f = (v) => Math.abs(v).toFixed(2);
+  const lenAng = (a) => `長さ ${geo.distance(a, p).toFixed(2)}  角度 ${geo.angleDegOf(a, p).toFixed(1)}°`;
+  if (state.dimTextDrag) {
+    const e = state.doc.entities.find((en) => en.id === state.dimTextDrag.id);
+    const shift = Number(e?.textShift) || 0;
+    return shift ? `値の位置: 中央から ${fmtMm(shift)}` : '値の位置: 中央';
+  }
+  if (state.moveDrag?.snapshotPushed && p) {
+    return `移動 X ${(p.x - state.moveDrag.startReal.x).toFixed(2)}  Y ${(p.y - state.moveDrag.startReal.y).toFixed(2)}`;
+  }
+  const d = state.draft;
+  if (!d || !p) return '';
+  if (d.kind === 'line') return lenAng(d.start);
+  if ((d.kind === 'polyline' || d.kind === 'spline') && d.points.length) return lenAng(d.points[d.points.length - 1]);
+  if (d.kind === 'rect') return `幅 ${f(p.x - d.start.x)}  高さ ${f(p.y - d.start.y)}`;
+  if (d.kind === 'circle') return `直径 ${(geo.distance(d.center, p) * 2).toFixed(2)}`;
+  if (d.kind === 'arc' && d.stage === 1) return `半径 ${geo.distance(d.center, p).toFixed(2)}`;
+  if (d.kind === 'arc' && d.stage === 2) {
+    let sweep = geo.angleDegOf(d.center, p) - geo.angleDegOf(d.center, d.startPoint);
+    while (sweep <= 0) sweep += 360;
+    return `角度 ${sweep.toFixed(1)}°`;
+  }
+  if (d.kind === 'ellipse' || (d.kind === 'earc' && d.stage === 1)) {
+    return `横の半径 ${f(p.x - d.center.x)}  縦の半径 ${f(p.y - d.center.y)}`;
+  }
+  if (d.kind === 'dim' && d.stage === 1) return `長さ ${geo.distance(d.p1, p).toFixed(2)}`;
+  if (d.kind === 'dim' && d.stage === 2 && d.orient) {
+    return `寸法 ${dimText({ type: 'dim', dimType: 'linear', orient: d.orient, p1: [d.p1.x, d.p1.y], p2: [d.p2.x, d.p2.y] })}`;
+  }
+  return '';
+}
+function updateCursorTip() {
+  const tip = el('cursor-tip');
+  const s = state.mouseScreen;
+  const busy = popup.isOpen() || help.isOpen() || textEntry.style.display === 'block' || state.panDrag;
+  if (!state.showGuide || !s || busy) {
+    tip.hidden = true;
+    return;
+  }
+  let guide = guideFor(state.tool, draftStage());
+  if (state.tool === 'select') {
+    guide = state.dimTextDrag ? '寸法の値を移動中（離すと確定）'
+      : state.hoverDimText ? '寸法の値: 押したまま動かすと寸法線に沿って移動' : null;
+  }
+  const values = liveValues();
+  if (!guide && !values) {
+    tip.hidden = true;
+    return;
+  }
+  tip.replaceChildren();
+  if (guide) tip.append(Object.assign(document.createElement('div'), { textContent: guide }));
+  if (values) tip.append(Object.assign(document.createElement('div'), { className: 'values', textContent: values }));
+  tip.hidden = false;
+  // カーソルの右下に表示。はみ出す場合は左・上へ
+  const wrap = el('canvas-wrap');
+  const x = s.x + 18 + tip.offsetWidth > wrap.clientWidth - 16 ? s.x - tip.offsetWidth - 12 : s.x + 18;
+  const y = s.y + 20 + tip.offsetHeight > wrap.clientHeight - 16 ? s.y - tip.offsetHeight - 12 : s.y + 20;
+  tip.style.left = `${Math.max(0, x)}px`;
+  tip.style.top = `${Math.max(0, y)}px`;
+}
+
+// 作図の途中・2段階の操作を取り消す
+function cancelInProgress() {
+  state.draft = null;
+  state.filletFirst = null;
+  state.offsetPick = null;
+  render();
+}
+// Esc: 途中の操作を取り消す → 何もなければ選択ツールへ → 選択ツールなら選択解除
+function handleEscape() {
+  popup.close();
+  closeTextEntry();
+  if (document.activeElement?.closest?.('#numpanel, #ribbon')) document.activeElement.blur();
+  if (inProgress()) {
+    cancelInProgress();
+  } else if (state.tool !== 'select') {
+    setTool('select');
+  } else {
+    state.selection.clear();
+    state.subSel = null;
+    render();
+  }
+}
 
 // ---- レイヤーパネル ----
 function buildLayerPanel() {
@@ -1751,22 +2094,43 @@ function isTyping(ev) {
   return ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement;
 }
 window.addEventListener('keydown', (ev) => {
+  if (help.isOpen()) {
+    if (ev.key === 'Escape') help.close();
+    return;
+  }
+  if (ev.key === 'F1' || (ev.key === '?' && !isTyping(ev))) {
+    ev.preventDefault();
+    openHelp(state.tool === 'select' ? null : helpTopicForTool(state.tool));
+    return;
+  }
   if (ev.code === 'Space' && !isTyping(ev)) {
     state.spaceDown = true;
     ev.preventDefault();
     return;
   }
   if (ev.key === 'Escape') {
-    state.draft = null;
-    state.selection.clear();
-    state.subSel = null;
-    state.filletFirst = null;
-    state.offsetPick = null;
-    closeTextEntry();
-    render();
+    handleEscape();
     return;
   }
   if (isTyping(ev)) return;
+  const plainKey = !ev.ctrlKey && !ev.altKey && !ev.metaKey;
+  // 直線を描いている途中に数字を打つと、長さの欄に入力できる(Enterで確定)
+  if (plainKey && state.draft?.kind === 'line' && /^[0-9.]$/.test(ev.key)) {
+    ev.preventDefault();
+    const len = el('num-len');
+    len.value = ev.key;
+    len.focus();
+    len.setSelectionRange(len.value.length, len.value.length);
+    showMessage('長さを入力して Enter で確定（角度は右の欄）');
+    return;
+  }
+  // 1文字キーでツールを切り替え
+  if (plainKey && toolForKey(ev.key)) {
+    ev.preventDefault();
+    popup.close();
+    setTool(toolForKey(ev.key));
+    return;
+  }
   // 矢印キーでパン
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key)) {
     ev.preventDefault();
@@ -1787,6 +2151,7 @@ window.addEventListener('keydown', (ev) => {
   if ((ev.ctrlKey && ev.key.toLowerCase() === 'y') ||
       (ev.ctrlKey && ev.shiftKey && ev.key.toLowerCase() === 'z')) { ev.preventDefault(); doRedo(); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 'd') { ev.preventDefault(); duplicateSelection(); }
+  if (ev.ctrlKey && ev.key.toLowerCase() === 'a') { ev.preventDefault(); selectAll(); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 'c') { ev.preventDefault(); copySelection(); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 'v') { ev.preventDefault(); pasteClipboard(); }
   if (ev.ctrlKey && ev.key.toLowerCase() === 's') { ev.preventDefault(); saveFile(ev.shiftKey); }
@@ -1799,6 +2164,11 @@ window.addEventListener('keyup', (ev) => {
 // ---- 起動 ----
 window.__seizu = state; // デバッグ・動作検証用(読み取り想定)
 buildStyleOptions();
+try {
+  activateTab(localStorage.getItem('seizu.tab') || 'draw');
+  state.showGuide = localStorage.getItem('seizu.showGuide') !== '0';
+} catch { /* 保存領域が使えなければ既定のまま */ }
+el('show-guide').checked = state.showGuide;
 resizeCanvas();
 syncSettingsUI();
 buildLayerPanel();
