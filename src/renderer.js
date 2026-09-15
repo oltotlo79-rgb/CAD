@@ -21,6 +21,7 @@ const COLORS = {
   gridMajor: '#b9c6d6',
   entity: '#111111',
   selected: '#0b6bcb',
+  hover: '#5aa9ff',
   draft: '#0a8a3e',
   origin: '#cc4400',
   selectBox: '#0b6bcb',
@@ -319,8 +320,10 @@ function drawEntities(ctx, doc, view, state, k) {
     const isSelected = selection.has(e.id);
     // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)。太さは要素ごとの指定を優先
     const width = Math.max(1, strokeWidthMm(e) * view.pxPerMm);
-    ctx.strokeStyle = isSelected ? COLORS.selected : COLORS.entity;
-    ctx.lineWidth = isSelected ? width + 2 : width;
+    // マウスを乗せた(クリックできる)図形は薄い青で強調
+    const isHover = !isSelected && state.hover === e.id;
+    ctx.strokeStyle = isSelected ? COLORS.selected : isHover ? COLORS.hover : COLORS.entity;
+    ctx.lineWidth = isSelected ? width + 2 : isHover ? width + 1.5 : width;
     ctx.setLineDash(style.dashMm.map((mm) => Math.max(1.5, mm * view.pxPerMm)));
     strokeEntity(ctx, doc, view, e, k);
     // 連続線/スプラインのセグメント選択の強調表示

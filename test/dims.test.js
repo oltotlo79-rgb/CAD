@@ -2,8 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fmtMm, dimText, dimLayout, annoTextMm, balloonLayout, roughnessLayout, fcfLayout,
-  annotationLayout, DIM_TEXT_MM,
+  annotationLayout, DIM_TEXT_MM, dimAxis, dimShiftAt, dimTextHit,
 } from '../src/dims.js';
+
+const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
+const hdim = {
+  type: 'dim', dimType: 'linear', orient: 'h', p1: [10, 0], p2: [60, 0], offset: 20,
+};
 
 test('fmtMm: 整数はそのまま、小数は2桁で丸めゼロを付けない', () => {
   assert.equal(fmtMm(50), '50');
@@ -70,6 +75,69 @@ test('dimLayout 引出線: 矢印の先端は対象点', () => {
   const { arrows, lines } = dimLayout(e, 1);
   assert.deepEqual(arrows[0].at, { x: 0, y: 0 });
   assert.ok(lines.length >= 2); // 引出線 + 水平尾
+});
+
+test('寸法の値の移動: 補助線の内側なら寸法線はそのまま、値だけ寸法線に沿ってずれる', () => {
+  const l = dimLayout({ ...hdim, textShift: 10 }, 1);
+  assert.deepEqual([l.texts[0].x, l.texts[0].y], [45, 21]); // 中央35 + 10
+  assert.deepEqual([l.lines[2][0].x, l.lines[2][1].x], [10, 60]);
+  // 矢印は内側から外向き
+  assert.deepEqual(l.arrows.map((a) => [a.at.x, a.angleDeg]), [[10, 180], [60, 0]]);
+});
+
+test('寸法の値の移動: 補助線の外に出すと寸法線が値の先まで延び、矢印は外側から内向き', () => {
+  const l = dimLayout({ ...hdim, textShift: 40 }, 1); // 中央35+40=75 > 補助線60
+  assert.equal(l.texts[0].x, 75);
+  const xs = [l.lines[2][0].x, l.lines[2][1].x].sort((a, b) => a - b);
+  assert.equal(xs[0], 10 - 6);                // 反対側は矢印の軸ぶん(6mm)突き出す
+  assert.ok(near(xs[1], 75 + 2 * 3.5 * 0.3)); // 値の側は文字(2文字)の外端まで
+  assert.deepEqual(l.arrows.map((a) => [a.at.x, a.angleDeg]), [[10, 0], [60, 180]]);
+  assert.equal(l.lines.length, 3);
+});
+
+test('寸法の値の移動: 左側に出した場合も同様に延長される', () => {
+  const l = dimLayout({ ...hdim, textShift: -40 }, 1);
+  const xs = [l.lines[2][0].x, l.lines[2][1].x].sort((a, b) => a - b);
+  assert.ok(near(xs[0], -5 - 2.1));
+  assert.equal(xs[1], 60 + 6);
+  assert.deepEqual(l.arrows.map((a) => [a.at.x, a.angleDeg]), [[10, 0], [60, 180]]);
+});
+
+test('寸法の値の移動: 垂直寸法・平行寸法では寸法線の向きに沿ってずれる', () => {
+  const v = dimLayout({
+    type: 'dim', dimType: 'linear', orient: 'v', p1: [0, 10], p2: [0, 60], offset: 20, textShift: 5,
+  }, 1);
+  assert.deepEqual([v.texts[0].x, v.texts[0].y], [19, 40]);
+  const al = dimLayout({
+    type: 'dim', dimType: 'linear', orient: 'aligned', p1: [0, 0], p2: [30, 40], offset: 10, textShift: 10,
+  }, 1);
+  // 寸法線の中点(7,26)から向き(0.6,0.8)に10、さらに法線側へ隙間1mm
+  assert.ok(near(al.texts[0].x, 12.2) && near(al.texts[0].y, 34.6));
+});
+
+test('dimAxis: 寸法線の向き(水平→+x、垂直→+y、平行→1点目から2点目)', () => {
+  assert.deepEqual(dimAxis(hdim), { x: 1, y: 0 });
+  assert.deepEqual(dimAxis({ ...hdim, orient: 'v' }), { x: 0, y: 1 });
+  const u = dimAxis({ ...hdim, orient: 'aligned', p1: [0, 0], p2: [30, 40] });
+  assert.ok(near(u.x, 0.6) && near(u.y, 0.8));
+});
+
+test('dimShiftAt: マウス位置を寸法線の向きに投影した中央からのずれ', () => {
+  assert.equal(dimShiftAt(hdim, { x: 50, y: 99 }), 15); // 中央35から+15(上下位置は無関係)
+  assert.equal(dimShiftAt(hdim, { x: 0, y: 0 }), -35);
+});
+
+test('dimTextHit: 寸法値の文字の範囲だけを判定(垂直寸法は回転した文字枠)', () => {
+  // 水平: 文字"50"は x=35 中央、y=21〜24.5
+  assert.ok(dimTextHit(hdim, { x: 35, y: 22.5 }, 0.1, 1));
+  assert.ok(!dimTextHit(hdim, { x: 35, y: 20 }, 0.1, 1)); // 寸法線上は文字ではない
+  assert.ok(dimTextHit({ ...hdim, textShift: 40 }, { x: 75, y: 22 }, 0.1, 1));
+  // 垂直: 文字は x=19 から左へ文字高さぶん、y=35 中央
+  const v = { type: 'dim', dimType: 'linear', orient: 'v', p1: [0, 10], p2: [0, 60], offset: 20 };
+  assert.ok(dimTextHit(v, { x: 17.5, y: 35 }, 0.1, 1));
+  assert.ok(!dimTextHit(v, { x: 17.5, y: 45 }, 0.1, 1));
+  // 直径寸法など平行移動できない寸法は対象外
+  assert.ok(!dimTextHit({ type: 'dim', dimType: 'dia', cx: 0, cy: 0, r: 10, angleDeg: 0 }, { x: 18, y: 1 }, 5, 1));
 });
 
 test('annoTextMm: 注記の文字高さは textMm、未指定・不正値は既定3.5', () => {

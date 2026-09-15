@@ -1,9 +1,11 @@
 import { FRAME_MARGIN_MM } from './papers.js';
 import {
-  distance, angleDegOf, distancePointToSegment, rotate90Point, catmullRomPoints,
-  lineEndPoint,
+  distance, angleDegOf, distancePointToSegment, catmullRomPoints,
+  lineEndPoint, round6,
 } from './geometry.js';
-import { balloonLayout, annotationLayout } from './dims.js';
+import {
+  balloonLayout, annotationLayout, dimAxis, textBoxHit,
+} from './dims.js';
 import { DEFAULT_TITLE_FIELDS } from './titleBlock.js';
 import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
 import { bomLayout } from './bom.js';
@@ -113,68 +115,209 @@ export function translateEntities(doc, ids, dx, dy) {
   }
 }
 
+const r6 = (v) => round6(v) || 0; // -0 を +0 に正規化
+const norm360 = (a) => ((a % 360) + 360) % 360;
+
 // 選択要素を center まわりに +90°(反時計回り)回転する
 export function rotate90Entities(doc, ids, center) {
+  rotateEntities(doc, ids, center, 90);
+}
+
+// 長さ寸法の値のずれ(textShift)を、変形前の向きのベクトルとして取り出し、
+// 変形後の寸法線の向きに投影し直す。vecMap は向きベクトルの変換
+function keepDimShift(e, transform, vecMap) {
+  const shift = Number(e.textShift) || 0;
+  const u0 = dimAxis(e);
+  transform();
+  if (!shift) return;
+  const [vx, vy] = vecMap(u0.x * shift, u0.y * shift);
+  const u1 = dimAxis(e);
+  e.textShift = r6(vx * u1.x + vy * u1.y);
+}
+
+// 選択要素を center まわりに deg 度(反時計回り正)回転する。
+// 注記の記号(粗さ・公差枠・部品表)は向きを保ったまま位置だけ回す
+export function rotateEntities(doc, ids, center, deg) {
   const target = new Set(ids);
+  const rad = deg * DEG;
+  const quarter = Number.isInteger(deg / 90);
+  const c = quarter ? Math.round(Math.cos(rad)) : Math.cos(rad);
+  const s = quarter ? Math.round(Math.sin(rad)) : Math.sin(rad);
+  const vec = (x, y) => [x * c - y * s, x * s + y * c];
+  const pt = (x, y) => {
+    const [vx, vy] = vec(x - center.x, y - center.y);
+    return [r6(center.x + vx), r6(center.y + vy)];
+  };
+  const P = ([x, y]) => pt(x, y);
   for (const e of doc.entities) {
     if (!target.has(e.id)) continue;
     if (e.type === 'line') {
-      const p1 = rotate90Point({ x: e.x1, y: e.y1 }, center);
-      const p2 = rotate90Point({ x: e.x2, y: e.y2 }, center);
-      e.x1 = p1.x; e.y1 = p1.y; e.x2 = p2.x; e.y2 = p2.y;
+      [e.x1, e.y1] = pt(e.x1, e.y1);
+      [e.x2, e.y2] = pt(e.x2, e.y2);
     } else if (e.type === 'rect') {
-      // 剛体回転: 左下角を回して rotation を+90
-      const p = rotate90Point({ x: e.x, y: e.y }, center);
-      e.x = p.x; e.y = p.y;
-      e.rotation = ((e.rotation ?? 0) + 90) % 360;
-    } else if (e.type === 'polyline' || e.type === 'spline') {
-      e.points = e.points.map(([x, y]) => {
-        const p = rotate90Point({ x, y }, center);
-        return [p.x, p.y];
-      });
-    } else if (e.type === 'roughness' || e.type === 'fcf') {
-      const p = rotate90Point({ x: e.x, y: e.y }, center);
-      e.x = p.x; e.y = p.y;
+      // 剛体回転: 左下角(回転の基準)を回して rotation を加算
+      [e.x, e.y] = pt(e.x, e.y);
+      e.rotation = norm360((e.rotation ?? 0) + deg);
+    } else if (e.type === 'polyline' || e.type === 'spline' || e.type === 'leader') {
+      e.points = e.points.map(P);
+    } else if (e.type === 'roughness' || e.type === 'fcf' || e.type === 'bom') {
+      [e.x, e.y] = pt(e.x, e.y);
     } else if (e.type === 'circle') {
-      const c = rotate90Point({ x: e.cx, y: e.cy }, center);
-      e.cx = c.x; e.cy = c.y;
+      [e.cx, e.cy] = pt(e.cx, e.cy);
     } else if (e.type === 'arc') {
-      const c = rotate90Point({ x: e.cx, y: e.cy }, center);
-      e.cx = c.x; e.cy = c.y;
-      e.startAngle += 90; e.endAngle += 90;
-    } else if (e.type === 'ellipse') {
-      const c = rotate90Point({ x: e.cx, y: e.cy }, center);
-      e.cx = c.x; e.cy = c.y;
-      e.rotation = ((e.rotation ?? 0) + 90) % 360;
-    } else if (e.type === 'text') {
-      const p = rotate90Point({ x: e.x, y: e.y }, center);
-      e.x = p.x; e.y = p.y;
-      e.rotation = ((e.rotation ?? 0) + 90) % 360;
+      [e.cx, e.cy] = pt(e.cx, e.cy);
+      e.startAngle += deg; e.endAngle += deg;
+    } else if (e.type === 'ellipse' || e.type === 'text') {
+      if (e.type === 'ellipse') [e.cx, e.cy] = pt(e.cx, e.cy);
+      else [e.x, e.y] = pt(e.x, e.y);
+      e.rotation = norm360((e.rotation ?? 0) + deg);
     } else if (e.type === 'balloon') {
-      const a = rotate90Point({ x: e.at[0], y: e.at[1] }, center);
-      const q = rotate90Point({ x: e.pos[0], y: e.pos[1] }, center);
-      e.at = [a.x, a.y];
-      e.pos = [q.x, q.y];
+      e.at = P(e.at);
+      e.pos = P(e.pos);
+    } else if (e.type === 'hatch') {
+      e.boundary = rotateBoundary(e.boundary, pt, deg, quarter);
+      e.angleDeg = ((e.angleDeg + deg) % 180 + 180) % 180;
+    } else if (e.type === 'dim') {
+      rotateDim(e, pt, vec, deg, quarter);
+    }
+  }
+}
+
+function rotateBoundary(b, pt, deg, quarter) {
+  const odd = quarter && Math.abs(deg / 90) % 2 === 1;
+  if (b.kind === 'circle') {
+    const [cx, cy] = pt(b.cx, b.cy);
+    return { ...b, cx, cy };
+  }
+  if (quarter && (b.kind === 'rect' || b.kind === 'ellipse')) {
+    if (b.kind === 'ellipse') {
+      const [cx, cy] = pt(b.cx, b.cy);
+      return odd ? { ...b, cx, cy, rx: b.ry, ry: b.rx } : { ...b, cx, cy };
+    }
+    const [mx, my] = pt(b.x + b.width / 2, b.y + b.height / 2);
+    const w = odd ? b.height : b.width;
+    const h = odd ? b.width : b.height;
+    return { kind: 'rect', x: r6(mx - w / 2), y: r6(my - h / 2), width: w, height: h };
+  }
+  // 斜めになる矩形・楕円は多角形(楕円は72角形で近似)にする
+  let points;
+  if (b.kind === 'rect') {
+    points = [[b.x, b.y], [b.x + b.width, b.y], [b.x + b.width, b.y + b.height], [b.x, b.y + b.height]];
+  } else if (b.kind === 'ellipse') {
+    points = Array.from({ length: 72 }, (_, i) => [
+      b.cx + b.rx * Math.cos(i * 5 * DEG), b.cy + b.ry * Math.sin(i * 5 * DEG),
+    ]);
+  } else {
+    points = b.points;
+  }
+  return { kind: 'polyline', points: points.map(([x, y]) => pt(x, y)) };
+}
+
+function rotateDim(e, pt, vec, deg, quarter) {
+  const P = ([x, y]) => pt(x, y);
+  if (e.dimType === 'dia' || e.dimType === 'rad') {
+    [e.cx, e.cy] = pt(e.cx, e.cy);
+    e.angleDeg += deg;
+  } else if (e.dimType === 'angle') {
+    e.vertex = P(e.vertex); e.p1 = P(e.p1); e.p2 = P(e.p2);
+  } else if (e.dimType === 'chamfer') {
+    e.p1 = P(e.p1); e.p2 = P(e.p2); e.tail = P(e.tail);
+  } else if (e.dimType === 'linear') {
+    keepDimShift(e, () => rotateLinearDim(e, pt, vec, deg, quarter), vec);
+  }
+}
+
+function rotateLinearDim(e, pt, vec, deg, quarter) {
+  const [x1, y1] = e.p1;
+  const [x2, y2] = e.p2;
+  if (e.orient === 'aligned') {
+    e.p1 = pt(x1, y1); e.p2 = pt(x2, y2); // offset は寸法線の法線方向なので不変
+    return;
+  }
+  const h = e.orient === 'h';
+  const lineX = h ? x1 : e.offset; // 寸法線上の1点
+  const lineY = h ? e.offset : y1;
+  const [dx, dy] = pt(lineX, lineY);
+  if (quarter) {
+    const odd = Math.abs(deg / 90) % 2 === 1;
+    e.p1 = pt(x1, y1); e.p2 = pt(x2, y2);
+    const nowH = odd ? !h : h;
+    e.orient = nowH ? 'h' : 'v';
+    e.offset = nowH ? dy : dx;
+    return;
+  }
+  // 斜めになる水平/垂直寸法は平行寸法にする。2点目は測る向きへの足
+  // (水平なら (x2,y1)) に置き換えて、測っている長さを保つ
+  const foot = h ? [x2, y1] : [x1, y2];
+  const p1 = pt(x1, y1);
+  const p2 = pt(foot[0], foot[1]);
+  const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+  if (len === 0) return;
+  const nx = -(p2[1] - p1[1]) / len;
+  const ny = (p2[0] - p1[0]) / len;
+  e.p1 = p1; e.p2 = p2;
+  e.orient = 'aligned';
+  e.offset = r6((dx - p1[0]) * nx + (dy - p1[1]) * ny);
+}
+
+// 選択要素を center を基準に f 倍する。文字・記号の大きさ(用紙mm)は変えない
+export function scaleEntities(doc, ids, center, f) {
+  const target = new Set(ids);
+  const pt = (x, y) => [r6(center.x + (x - center.x) * f), r6(center.y + (y - center.y) * f)];
+  const P = ([x, y]) => pt(x, y);
+  const len = (v) => r6(v * f);
+  for (const e of doc.entities) {
+    if (!target.has(e.id)) continue;
+    if (e.type === 'line') {
+      [e.x1, e.y1] = pt(e.x1, e.y1);
+      [e.x2, e.y2] = pt(e.x2, e.y2);
+    } else if (e.type === 'rect') {
+      [e.x, e.y] = pt(e.x, e.y);
+      e.width = len(e.width); e.height = len(e.height);
+    } else if (e.type === 'polyline' || e.type === 'spline' || e.type === 'leader') {
+      e.points = e.points.map(P);
+    } else if (e.type === 'roughness' || e.type === 'fcf' || e.type === 'bom' || e.type === 'text') {
+      [e.x, e.y] = pt(e.x, e.y);
+    } else if (e.type === 'circle' || e.type === 'arc') {
+      [e.cx, e.cy] = pt(e.cx, e.cy);
+      e.r = len(e.r);
+    } else if (e.type === 'ellipse') {
+      [e.cx, e.cy] = pt(e.cx, e.cy);
+      e.rx = len(e.rx); e.ry = len(e.ry);
+    } else if (e.type === 'balloon') {
+      e.at = P(e.at);
+      e.pos = P(e.pos);
     } else if (e.type === 'hatch') {
       const b = e.boundary;
       if (b.kind === 'rect') {
-        const c = rotate90Point({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, center);
-        const w = b.height, h = b.width;
-        b.x = c.x - w / 2; b.y = c.y - h / 2; b.width = w; b.height = h;
-      } else if (b.kind === 'circle' || b.kind === 'ellipse') {
-        const c = rotate90Point({ x: b.cx, y: b.cy }, center);
-        b.cx = c.x; b.cy = c.y;
-        if (b.kind === 'ellipse') { const rx = b.ry; b.ry = b.rx; b.rx = rx; }
+        [b.x, b.y] = pt(b.x, b.y);
+        b.width = len(b.width); b.height = len(b.height);
+      } else if (b.kind === 'circle') {
+        [b.cx, b.cy] = pt(b.cx, b.cy);
+        b.r = len(b.r);
+      } else if (b.kind === 'ellipse') {
+        [b.cx, b.cy] = pt(b.cx, b.cy);
+        b.rx = len(b.rx); b.ry = len(b.ry);
       } else if (b.kind === 'polyline') {
-        b.points = b.points.map(([x, y]) => {
-          const p = rotate90Point({ x, y }, center);
-          return [p.x, p.y];
-        });
+        b.points = b.points.map(P);
       }
-      e.angleDeg = (e.angleDeg + 90) % 180;
-    } else if (e.type === 'bom') {
-      const p = rotate90Point({ x: e.x, y: e.y }, center);
-      e.x = p.x; e.y = p.y; // 表自体は軸平行のまま
+    } else if (e.type === 'dim') {
+      if (e.dimType === 'linear') {
+        e.p1 = P(e.p1); e.p2 = P(e.p2);
+        if (e.orient === 'h') e.offset = r6(center.y + (e.offset - center.y) * f);
+        else if (e.orient === 'v') e.offset = r6(center.x + (e.offset - center.x) * f);
+        else e.offset = len(e.offset);
+        if (e.textShift) e.textShift = len(e.textShift);
+      } else if (e.dimType === 'dia' || e.dimType === 'rad') {
+        [e.cx, e.cy] = pt(e.cx, e.cy);
+        e.r = len(e.r);
+      } else if (e.dimType === 'angle') {
+        e.vertex = P(e.vertex); e.p1 = P(e.p1); e.p2 = P(e.p2);
+        e.radius = len(e.radius);
+      } else if (e.dimType === 'chamfer') {
+        e.p1 = P(e.p1); e.p2 = P(e.p2); e.tail = P(e.tail);
+        e.size = len(e.size);
+      }
     }
   }
 }
@@ -266,11 +409,13 @@ export function mirrorEntities(doc, ids, axis, center) {
       [e.x, e.y] = mp(e.x, e.y);
     } else if (e.type === 'dim') {
       if (e.dimType === 'linear') {
-        e.p1 = mp(e.p1[0], e.p1[1]);
-        e.p2 = mp(e.p2[0], e.p2[1]);
-        if (e.orient === 'h' && axis === 'y') e.offset = my(e.offset);
-        else if (e.orient === 'v' && axis === 'x') e.offset = mx(e.offset);
-        else if (e.orient === 'aligned') e.offset = -e.offset;
+        keepDimShift(e, () => {
+          e.p1 = mp(e.p1[0], e.p1[1]);
+          e.p2 = mp(e.p2[0], e.p2[1]);
+          if (e.orient === 'h' && axis === 'y') e.offset = my(e.offset);
+          else if (e.orient === 'v' && axis === 'x') e.offset = mx(e.offset);
+          else if (e.orient === 'aligned') e.offset = -e.offset;
+        }, (vx, vy) => (axis === 'x' ? [-vx, vy] : [vx, -vy]));
       } else if (e.dimType === 'dia' || e.dimType === 'rad') {
         [e.cx, e.cy] = mp(e.cx, e.cy);
         e.angleDeg = axis === 'x' ? 180 - e.angleDeg : -e.angleDeg;
@@ -478,10 +623,7 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
     }
     const textH = layout.textMm / k;
     for (const t of layout.texts) {
-      const w = t.content.length * textH;
-      const x0 = t.align === 'center' ? t.x - w / 2 : t.align === 'right' ? t.x - w : t.x;
-      if (p.x >= x0 - tolMm && p.x <= x0 + w + tolMm &&
-          p.y >= t.y - tolMm && p.y <= t.y + textH + tolMm) return true;
+      if (textBoxHit(t, textH, p, tolMm)) return true;
     }
     return false;
   }

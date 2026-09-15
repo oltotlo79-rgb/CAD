@@ -3,8 +3,37 @@ import assert from 'node:assert/strict';
 import {
   strokeWidthMm, widthSettingMm, textHeightMm, hasStroke, hasText,
   applyWidth, applyTextHeight, commonValue, strokeStyleOf,
-  WIDTH_CHOICES_MM, TEXT_CHOICES_MM,
+  WIDTH_CHOICES_MM, TEXT_CHOICES_MM, hasLineType, presetOf, applyPreset,
 } from '../src/entityStyle.js';
+
+test('hasLineType: 線種を変えられるのは線・円などの図形だけ', () => {
+  for (const type of ['line', 'polyline', 'spline', 'rect', 'circle', 'arc', 'ellipse']) {
+    assert.ok(hasLineType({ type }), type);
+  }
+  for (const type of ['text', 'dim', 'leader', 'hatch', 'balloon', 'bom', 'roughness', 'fcf']) {
+    assert.ok(!hasLineType({ type }), type);
+  }
+});
+
+test('presetOf: 線種とレイヤーから線種メニューの項目を判定する', () => {
+  assert.equal(presetOf({ type: 'line', lineType: 'solid', layer: 'outline' }), 'outline');
+  assert.equal(presetOf({ type: 'line', lineType: 'dashed', layer: 'hidden' }), 'hidden');
+  assert.equal(presetOf({ type: 'circle', lineType: 'thin', layer: 'outline' }), 'thinline');
+  assert.equal(presetOf({ type: 'line', lineType: 'thin', layer: 'aux' }), 'aux');
+  assert.equal(presetOf({ type: 'arc', lineType: 'chain2', layer: 'outline' }), 'phantom');
+  // レイヤーが一致しないデータは線種だけで判定
+  assert.equal(presetOf({ type: 'line', lineType: 'chain', layer: 'outline' }), 'center');
+  assert.equal(presetOf({ type: 'dim', lineType: 'thin', layer: 'dim' }), null);
+});
+
+test('applyPreset: 線種とレイヤーを変え、太さの指定は残す。対象外は変えない', () => {
+  const e = { type: 'line', lineType: 'solid', layer: 'outline', widthMm: 0.7 };
+  assert.equal(applyPreset(e, 'hidden'), true);
+  assert.deepEqual([e.lineType, e.layer, e.widthMm], ['dashed', 'hidden', 0.7]);
+  const t = { type: 'text', layer: 'note', lineType: 'thin' };
+  assert.equal(applyPreset(t, 'hidden'), false);
+  assert.equal(t.layer, 'note');
+});
 
 test('strokeWidthMm: 未指定なら線種の既定太さ(外形線0.5/かくれ線0.35/細線0.25)', () => {
   assert.equal(strokeWidthMm({ type: 'line', lineType: 'solid' }), 0.5);
