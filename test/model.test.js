@@ -17,7 +17,7 @@ test('createDocument: 仕様どおりの既定値', () => {
   const doc = createDocument();
   assert.equal(doc.format, 'seizu-tool');
   assert.equal(doc.version, 1);
-  assert.deepEqual(doc.paper, { size: 'A3', orientation: 'landscape' });
+  assert.deepEqual(doc.paper, { size: 'A4', orientation: 'landscape' });
   assert.deepEqual(doc.scale.ratio, [1, 1]);
   assert.deepEqual(doc.userOrigin, { x: 10, y: 10 }); // 図面枠内側・左下
   assert.deepEqual(doc.grid, { mode: 'auto', manualMm: 1 });

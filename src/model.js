@@ -43,7 +43,7 @@ function todayString() {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function createDocument({ paperSize = 'A3', orientation = 'landscape' } = {}) {
+export function createDocument({ paperSize = 'A4', orientation = 'landscape' } = {}) {
   const titleFields = DEFAULT_TITLE_FIELDS.map((f) =>
     (f.label === '日付' ? { ...f, value: todayString() } : { ...f }));
   return {

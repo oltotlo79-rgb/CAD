@@ -25,9 +25,9 @@ test('bind項目: 尺度・用紙は図面設定から自動反映', () => {
 });
 
 test('レイアウト: 図面枠内側の右下に配置される', () => {
-  const doc = createDocument(); // A3横: 420×297、枠は10mm内側
+  const doc = createDocument(); // A4横: 297×210、枠は10mm内側
   const tb = titleBlockLayout(doc);
-  assert.equal(tb.x, 410 - TITLE_BLOCK_W); // 枠右端410から左へ
+  assert.equal(tb.x, 287 - TITLE_BLOCK_W); // 枠右端287から左へ
   assert.equal(tb.y, 10);                  // 枠下端
   assert.equal(tb.height, TITLE_ROW_H * doc.titleBlock.fields.length);
   // 先頭フィールドが最上段の行になる
