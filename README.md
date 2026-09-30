@@ -7,6 +7,8 @@ Excel感覚でグリッドに線を引ける軽量2D製図ツール。単一HTML
 
 `dist/seizu.html` をブラウザ(Chrome/Edge推奨)で開くだけ。配布もこのファイル1つをコピーするだけ。
 
+JavaScriptの変数名・関数名や日本語を読みやすくした非圧縮版は `dist/seizu.readable.html`。こちらも単一HTMLで動作します。
+
 ### 基本操作
 
 使い方は画面右上の **「？ ヘルプ」**(または **F1**)で、専門用語を使わず図付きで確認できます。ツールを使っている時に F1 を押すと、そのツールの説明が開きます。
@@ -52,3 +54,4 @@ Excel感覚でグリッドに線を引ける軽量2D製図ツール。単一HTML
 - `npm test` — ロジックのテスト
 - `npm run dev` — http://localhost:8000 で開発サーバー
 - `npm run build` — `dist/seizu.html` を生成
+- `npm run build:readable` — 非圧縮版の `dist/seizu.readable.html` を生成
