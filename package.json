@@ -6,9 +6,12 @@
     "test": "node --test",
     "dev": "esbuild src/app.js --bundle --outfile=www/app.js --servedir=www --watch",
     "build": "node build.mjs",
-    "build:readable": "node build.mjs --readable"
+    "build:readable": "node build.mjs --readable",
+    "help:capture": "node scripts/capture-help.mjs",
+    "test:html": "node scripts/check-html.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "playwright": "^1.63.0"
   }
 }

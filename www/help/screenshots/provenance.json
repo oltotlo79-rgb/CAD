@@ -1,0 +1,40 @@
+{
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "deviceScaleFactor": 1,
+  "browser": "153.0.8010.12",
+  "sourceHashes": {
+    "www/index.html": "8e600f1a37e505fd12181204a59bc936024181c03383b17ba8acd40fc1a8e361",
+    "www/styles.css": "bd348702d4dd2727e5f4dba1a279e58f1aeef5fd8ba17e78adbffaaa83c90173",
+    "src/app.js": "2c9615ae604f07e98461ed4fd57d8a76402ee9a35a6d0fc4b593c5e21297e273",
+    "src/bom.js": "b4a7c6e17539aee65aa9b109bc6546b4d6b10df3afe04dbc5f12666c66c92ac5",
+    "src/dims.js": "81ad27f151f02d50238f989a966655c1cc0ac5e3d44716166b74e5a9f9e1e5ed",
+    "src/editOps.js": "b797cd41abe6c172c1676043800169b05b55c2ccccc266a13a8b49f182d53e7d",
+    "src/entityStyle.js": "a5ac9384fdabef505ac2989ab0f02120549e4923dfa670dfde39663916ba5b14",
+    "src/fileio.js": "3afc376832778c93e0e50ecea9e5fc26e60d64fd2c1bc81a94e00e276d374282",
+    "src/geometry.js": "213aa0b8f46f1a4b0186832f2a9cd2f9b6535d3421d24b22e646b260be23d585",
+    "src/gridCalc.js": "bbae2a1a9d05185813251afc07fda698b2eacd0d2283a40441966dda3865363f",
+    "src/guides.js": "e807334da5029b46e277d741f23e7f2d5a41567bdacfc78f539b9b0b197c8306",
+    "src/hatch.js": "3ba47a5ee57ce798bbed1bdeac65b4b798fd5f64b216ae2d1eade7fe338c1f5d",
+    "src/helpContent.js": "0c995e08e2448a05cee146bcb729f6c90f19d1bf3a47908e3449029474c88d5f",
+    "src/helpDetails.js": "c4ac4b8eb311e0137b7629399336e3a867f8b7a94e1cedfaca8fdc4b528dc0cc",
+    "src/helpView.js": "9002d3806882d35ab65776efa36cfa5daa8367492b44f909599b5b6ec12816af",
+    "src/history.js": "47c49c1bef479e19b54a7ed6f6724651ac0287b38e4fdad780407a8b582ba2cf",
+    "src/menuModel.js": "e6a36ea6740d3603d5ce839767660b65bce26b36dbdf5f5c52f098f7dcacbec3",
+    "src/model.js": "22e2daf4a7dcc2073f8cb5b6b5738771aa9b2518a4165a439b4448190ea38883",
+    "src/papers.js": "263afe321779954756995368a414825c75cd92feb7f3a4e7bc676a2062a2274e",
+    "src/popupMenu.js": "1b09059507cf0efe38f6b37574a22b3759293f4f0a5c42456b18f9e36b7cfa83",
+    "src/renderer.js": "eea72902348964fea5ac16b95cba724aa7c129a53d366d645f799f565ec41406",
+    "src/serializer.js": "a422d6a7caf004ff17dec607b43ffb31abd8030a6f0c786e4e965fedf33f22e4",
+    "src/snap.js": "5f59e8c4ec7cd55b06da930eddc5940e288e20210146f69d19a87d142b9bad9b",
+    "src/snapshotStore.js": "09fb2e00c54c5b66b39ed5a2a31a7f3b71c0b5a2c483ac8727f75744bed4d725",
+    "src/svgExport.js": "0c355416e7ba6e44c63ea046c8e415dda4df530aac1694f0fbbe96748bddeae9",
+    "src/thread.js": "cffbdbc3e76b434145b238098618620f6c40ad779f6c7699d948eabdcd9efc3f",
+    "src/titleBlock.js": "974ad096b8d09de73045b5697d0f2514141ab48014b9e00393a438277c380856",
+    "src/toolInfo.js": "354517a5f12d99fbee420f6f6e26eb789e767a91863c3b08978e711a60cd4d83",
+    "src/viewTransform.js": "a3656e48531a10e11a80b1b55b2f95a67262d68e3cecd4bcffa503ab2b7942e0",
+    "scripts/capture-help.mjs": "5c2fd5746d7ce080f60df5b7a89db1ef42fbda44cc9ff892603d45f285734236"
+  }
+}

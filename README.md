@@ -8,10 +8,12 @@ Excel感覚でグリッドに線を引ける軽量2D製図ツール。単一HTML
 `dist/seizu.html` をブラウザ(Chrome/Edge推奨)で開くだけ。配布もこのファイル1つをコピーするだけ。
 
 JavaScriptの変数名・関数名や日本語を読みやすくした非圧縮版は `dist/seizu.readable.html`。こちらも単一HTMLで動作します。
+両方のHTMLは同じ本文・CSS・画像・機能を含み、JavaScriptの圧縮の有無だけが違います。ヘルプの画像もHTMLに埋め込んでいるため、画像フォルダを一緒に配布する必要はありません。
 
 ### 基本操作
 
 使い方は画面右上の **「？ ヘルプ」**(または **F1**)で、専門用語を使わず図付きで確認できます。ツールを使っている時に F1 を押すと、そのツールの説明が開きます。
+全55項目に操作場所、具体例、できあがりの確認、うまくいかない場合の対処を用意しています。図は実際のアプリの画面を撮影したもので、クリックすると拡大でき、「原寸で見る」でボタン名や細部も確認できます。オレンジの番号と線だけが説明用の注釈です。
 
 | 操作 | 方法 |
 |---|---|
@@ -53,5 +55,10 @@ JavaScriptの変数名・関数名や日本語を読みやすくした非圧縮�
 - `npm install` — 初回のみ
 - `npm test` — ロジックのテスト
 - `npm run dev` — http://localhost:8000 で開発サーバー
-- `npm run build` — `dist/seizu.html` を生成
+- `npm run build` — 圧縮版 `dist/seizu.html` と非圧縮版 `dist/seizu.readable.html` を同じ入力から両方生成
 - `npm run build:readable` — 非圧縮版の `dist/seizu.readable.html` を生成
+- `npx playwright install chromium` — 実画面の撮影・HTML検証用ブラウザを初回に準備
+- `npm run help:capture` — 実際のDOM・CSS・Canvas描画を操作してヘルプ用の画面を撮影。画像と座標情報・撮影元のハッシュを更新
+- `npm run test:html` — 両HTMLをファイルから開き、全ヘルプの本文・画像・画面レイアウトの一致、画像の埋め込み、検索、拡大表示、狭い画面を検証
+
+画面や描画を変更したら `npm run help:capture` → `npm test` → `npm run build` → `npm run test:html` の順で更新します。撮影は1280×800・表示倍率100%で行い、操作の途中と結果を切り出します。図の注釈は撮影時の実座標に合わせたSVGで重ね、元の画面画像は描き直しません。

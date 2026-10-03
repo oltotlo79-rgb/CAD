@@ -35,6 +35,8 @@ export function createHelp() {
   let search = null;
   let currentId = HELP_TOPICS[0]?.id ?? null;
   let previousFocus = null;
+  let figureDialog = null;
+  let figureFocus = null;
 
   function build() {
     overlay = document.createElement('div');
@@ -51,17 +53,44 @@ export function createHelp() {
           <nav class="help-toc"></nav>
           <article class="help-article"></article>
         </div>
-      </div>`;
+      </div>
+      <dialog class="help-figure-dialog" aria-label="ヘルプの図を拡大">
+        <header><h2>実画面の拡大図</h2><button type="button" class="help-figure-fit" aria-pressed="false">原寸で見る</button><button type="button" class="help-figure-close">図を閉じる ✕</button></header>
+        <p class="help-figure-caption"></p>
+        <div class="help-figure-detail"></div>
+      </dialog>`;
     document.body.append(overlay);
     toc = overlay.querySelector('.help-toc');
     article = overlay.querySelector('.help-article');
     search = overlay.querySelector('input');
+    figureDialog = overlay.querySelector('dialog');
+    const closeFigure = () => {
+      figureDialog.close();
+      figureFocus?.focus?.();
+    };
+    overlay.querySelector('.help-figure-close').addEventListener('click', closeFigure);
+    overlay.querySelector('.help-figure-fit').addEventListener('click', (ev) => {
+      const original = figureDialog.classList.toggle('original-size');
+      ev.currentTarget.textContent = original ? '画面に合わせる' : '原寸で見る';
+      ev.currentTarget.setAttribute('aria-pressed', String(original));
+    });
+    figureDialog.addEventListener('cancel', (ev) => { ev.preventDefault(); closeFigure(); });
     overlay.querySelector('.help-close').addEventListener('click', close);
     // 背景(暗い部分)をクリックで閉じる
     overlay.addEventListener('pointerdown', (ev) => { if (ev.target === overlay) close(); });
     overlay.addEventListener('keydown', (ev) => {
       ev.stopPropagation(); // 図面側のショートカットを効かせない
-      if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        if (figureDialog.open) closeFigure();
+        else close();
+      }
+      if (ev.key === 'Tab' && !figureDialog.open) {
+        const focusable = [...overlay.querySelectorAll('.help-window button, .help-window input, .help-window a[href]')];
+        const first = focusable[0], last = focusable.at(-1);
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last?.focus(); }
+        else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first?.focus(); }
+      }
     });
     search.addEventListener('input', () => {
       if (!search.value.trim()) { show(currentId); return; }
@@ -74,6 +103,18 @@ export function createHelp() {
     });
     // 目次・本文中のリンク(#help:ID)で項目を切り替える
     overlay.addEventListener('click', (ev) => {
+      const figure = ev.target.closest('.help-figure-open');
+      if (figure) {
+        figureFocus = figure;
+        figureDialog.querySelector('.help-figure-detail').replaceChildren(figure.querySelector('svg').cloneNode(true));
+        figureDialog.querySelector('.help-figure-caption').textContent = figure.closest('figure').querySelector('figcaption').textContent;
+        figureDialog.classList.remove('original-size');
+        const fit = figureDialog.querySelector('.help-figure-fit');
+        fit.textContent = '原寸で見る';
+        fit.setAttribute('aria-pressed', 'false');
+        figureDialog.showModal();
+        return;
+      }
       const a = ev.target.closest('a[href^="#help:"]');
       if (!a) return;
       ev.preventDefault();
@@ -149,6 +190,7 @@ export function createHelp() {
   }
 
   function close() {
+    if (figureDialog?.open) figureDialog.close();
     if (overlay) overlay.hidden = true;
     previousFocus?.focus?.();
   }
