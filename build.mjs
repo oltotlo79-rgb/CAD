@@ -28,7 +28,11 @@ for (const minify of readable ? [false] : [true, false]) {
     entryPoints: ['src/app.js'], bundle: true, minify, charset: 'utf8',
     format: 'iife', write: false, plugins: [screenshotPlugin],
   });
-  const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
+  // HTMLに直接書き込むので、スクリプトを途中で終わらせる `</script` と、
+  // 古い仕様でコメント開始とみなされる `<!--` を打ち消す(文字列・正規表現の意味は変わらない)。
+  const js = result.outputFiles[0].text
+    .replace(/<\/script/gi, '<\\/script')
+    .replace(/<!--/g, '<\\!--');
   const html = template.replace(/<script[^>]*src=[^>]*><\/script>/, () => `<script>\n${js}\n</script>`);
   const outputPath = minify ? 'dist/seizu.html' : 'dist/seizu.readable.html';
   await writeFile(outputPath, html);
