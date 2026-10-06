@@ -1,0 +1,16 @@
+# 文字コード・改行の扱いを PC ごとの設定に左右されないよう固定する
+# テキストは git の中では LF で統一し、取り出す側の OS に合わせて改行を変換する
+* text=auto
+
+# Excel などの Office ファイル・画像は中身を一切変換しない(改行変換で壊れるのを防ぐ)
+*.xlsx binary
+*.xlsm binary
+*.xls  binary
+*.docx binary
+*.pptx binary
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
