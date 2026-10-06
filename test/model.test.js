@@ -7,6 +7,7 @@ import {
   mirrorEntities, entitySnapPoints, entityBounds, hitTestEntity,
   LINE_STYLES, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment, ellipsePoint,
+  isEntityVisible, parseNumber,
 } from '../src/model.js';
 import { dimText, dimLayout } from '../src/dims.js';
 import { hatchSegments } from '../src/hatch.js';
@@ -368,4 +369,66 @@ test('parseScale: "1:5"→[1,5]、全角コロン可、不正はnull', () => {
 
 test('formatScale: [1,5]→"1:5"', () => {
   assert.equal(formatScale([1, 5]), '1:5');
+});
+
+test('translateEntities: 角度寸法も頂点・2点が一緒に動く', () => {
+  const doc = createDocument();
+  const a = addEntity(doc, { type: 'dim', dimType: 'angle', vertex: [0, 0], p1: [10, 0], p2: [0, 10], radius: 8 });
+  translateEntities(doc, [a.id], 5, -3);
+  assert.deepEqual([a.vertex, a.p1, a.p2], [[5, -3], [15, -3], [5, 7]]);
+});
+
+test('mirrorEntities: 角度寸法は鏡映しても角度の値(開き)が変わらない', () => {
+  const doc = createDocument();
+  const a = addEntity(doc, { type: 'dim', dimType: 'angle', vertex: [10, 0], p1: [20, 0], p2: [10, 10], radius: 8 });
+  assert.equal(dimText(a), '90°');
+  mirrorEntities(doc, [a.id], 'x', { x: 0, y: 0 });
+  assert.deepEqual(a.vertex, [-10, 0]);
+  assert.equal(dimText(a), '90°'); // 270° にならない
+  mirrorEntities(doc, [a.id], 'y', { x: 0, y: 0 });
+  assert.equal(dimText(a), '90°');
+});
+
+test('回転した文字: 当たり判定と外接枠が回転を考慮する', () => {
+  // 原点から上向き(90°)に書いた「ab」(高さ3.5)は x∈[-3.5,0], y∈[0,7] を占める
+  const t = { type: 'text', x: 0, y: 0, content: 'ab', height: 3.5, rotation: 90 };
+  assert.ok(hitTestEntity(t, { x: -1.5, y: 5 }, 0.1, 1));
+  assert.ok(!hitTestEntity(t, { x: 5, y: 1 }, 0.1, 1)); // 回転前の位置にはいない
+  const b = entityBounds(t, 1);
+  assert.ok(approx(b.minX, -3.5) && approx(b.maxX, 0) && approx(b.minY, 0) && approx(b.maxY, 7));
+});
+
+test('isEntityVisible: 非表示レイヤーの図形は見えない扱い(未知のレイヤーは見える)', () => {
+  const doc = createDocument();
+  const line = addEntity(doc, { type: 'line', x1: 0, y1: 0, x2: 1, y2: 0, layer: 'aux' });
+  assert.ok(isEntityVisible(doc, line));
+  doc.layers.find((l) => l.id === 'aux').visible = false;
+  assert.ok(!isEntityVisible(doc, line));
+  assert.ok(isEntityVisible(doc, { type: 'line', layer: 'nope' }));
+});
+
+test('parseNumber: 全角の数字・記号も数値として読める(不正は NaN)', () => {
+  assert.equal(parseNumber('１２.５'), 12.5);
+  assert.equal(parseNumber('－３０'), -30);
+  assert.equal(parseNumber('１２３'), 123);
+  assert.equal(parseNumber(' 7 '), 7);
+  assert.equal(parseNumber('0'), 0);
+  assert.ok(Number.isNaN(parseNumber('')));
+  assert.ok(Number.isNaN(parseNumber('abc')));
+});
+
+test('parseScale: 全角の数字でも縮尺を読める', () => {
+  assert.deepEqual(parseScale('１：２'), [1, 2]);
+});
+
+test('hitTestEntity: 角度寸法は円弧の上をクリックしても当たる', () => {
+  const e = {
+    type: 'dim', dimType: 'angle', vertex: [0, 0], p1: [20, 0], p2: [0, 20], radius: 15,
+    override: null, layer: 'dim', lineType: 'thin',
+  };
+  const c = 15 * Math.SQRT1_2; // 45°方向・半径15 の点
+  assert.equal(hitTestEntity(e, { x: c, y: c }, 0.5), true, '円弧の真上');
+  assert.equal(hitTestEntity(e, { x: -c, y: c }, 0.5), false, '円弧の範囲外(135°)');
+  assert.equal(hitTestEntity(e, { x: c * 0.6, y: c * 0.6 }, 0.5), false, '円弧より内側');
+  assert.equal(hitTestEntity(e, { x: 10, y: 0 }, 0.5), true, '頂点からの線の上');
 });

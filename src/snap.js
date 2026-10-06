@@ -1,4 +1,6 @@
-import { entitySnapPoints, entitySegments, entityBounds } from './model.js';
+import {
+  entitySnapPoints, entitySegments, entityBounds, isEntityVisible,
+} from './model.js';
 import { distance, segSegIntersection, segCircleIntersections } from './geometry.js';
 
 function nearBounds(e, p, tolMm, k) {
@@ -33,7 +35,8 @@ function intersectionsBetween(e1, e2) {
 // 戻り値: { x, y, kind } | null。kind: end/mid/center/quad/intersection
 export function findSnap(doc, p, tolMm, k = 1) {
   const near = [];
-  const candidates = doc.entities.filter((e) => nearBounds(e, p, tolMm, k));
+  // 見えていない図形(非表示レイヤー)には吸着しない
+  const candidates = doc.entities.filter((e) => isEntityVisible(doc, e) && nearBounds(e, p, tolMm, k));
   for (const e of candidates) {
     for (const sp of entitySnapPoints(e)) {
       const d = distance(p, sp);

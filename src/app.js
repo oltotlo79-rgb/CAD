@@ -7,7 +7,7 @@ import {
   duplicateEntities, parseScale, formatScale,
   rotateEntities, scaleEntities, entityBounds, hitTestEntity, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment,
-  entitySegments,
+  entitySegments, isEntityVisible, parseNumber,
 } from './model.js';
 import { findSnap } from './snap.js';
 import {
@@ -45,6 +45,8 @@ import { createFileIO } from './fileio.js';
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const el = (id) => document.getElementById(id);
+// 日本語入力の変換中(変換を確定する Enter など)か。古いブラウザは keyCode 229 で分かる
+const isComposing = (ev) => ev.isComposing || ev.keyCode === 229;
 
 const state = {
   doc: createDocument(),
@@ -127,7 +129,7 @@ function centerMidGuides(cursor) {
   const range = 60 / pxPerRealMm(); // カーソル周辺60px
   const out = [];
   for (const e of state.doc.entities) {
-    if (MID_GUIDE_SKIP.includes(e.type)) continue;
+    if (MID_GUIDE_SKIP.includes(e.type) || !isEntityVisible(state.doc, e)) continue;
     const b = entityBounds(e, k);
     if (cursor.x < b.minX - range || cursor.x > b.maxX + range
       || cursor.y < b.minY - range || cursor.y > b.maxY + range) continue;
@@ -244,6 +246,7 @@ function render() {
 
 // ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
 let lastPanelKey = null;
+let cancelPanelEdit = false; // Esc で欄を離れる時は、打ちかけの値を図形に反映しない
 const PANEL_EDITABLE = ['line', 'circle', 'arc', 'rect', 'ellipse', 'polyline', 'spline', 'text'];
 function selectedEditable() {
   if (state.selection.size !== 1) return null;
@@ -551,6 +554,9 @@ function movePan(s) {
 
 // ---- ツールバーのタブ ----
 function activateTab(name) {
+  // 以前のバージョンで保存されたタブ名など、存在しないタブなら「作図」に戻す
+  const panels = [...document.querySelectorAll('#ribbon .panel')];
+  if (!panels.some((p) => p.dataset.panel === name)) name = 'draw';
   document.querySelectorAll('#tabs .tab').forEach((t) =>
     t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('#ribbon .panel').forEach((p) =>
@@ -668,8 +674,10 @@ function hitTestScreen(s) {
   const real = screenToReal(s);
   const tolMm = 6 / pxPerRealMm();
   const k = vt.scaleK(state.doc.scale);
+  // 上に描かれた図形を優先。非表示レイヤーの図形は見えないのでクリックできない
   for (let i = state.doc.entities.length - 1; i >= 0; i--) {
-    if (hitTestEntity(state.doc.entities[i], real, tolMm, k)) return state.doc.entities[i];
+    const e = state.doc.entities[i];
+    if (isEntityVisible(state.doc, e) && hitTestEntity(e, real, tolMm, k)) return e;
   }
   return null;
 }
@@ -681,6 +689,7 @@ function selectInBox(startScreen, endScreen) {
   const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
   const k = vt.scaleK(state.doc.scale);
   for (const e of state.doc.entities) {
+    if (!isEntityVisible(state.doc, e)) continue;
     const bb = entityBounds(e, k);
     if (bb.minX >= minX && bb.maxX <= maxX && bb.minY >= minY && bb.maxY <= maxY) {
       state.selection.add(e.id);
@@ -896,7 +905,7 @@ function handleToolPointerDown(s, ev) {
         showMessage(`${toolName}: 2本目の直線をクリックしてください`);
         render();
       } else if (hit.id !== state.filletFirst.line.id) {
-        const r = Number(el('fillet-r').value);
+        const r = parseNumber(el('fillet-r').value);
         const first = state.filletFirst;
         state.filletFirst = null;
         state.selection.clear();
@@ -975,8 +984,11 @@ function handleToolPointerDown(s, ev) {
     if (hit) {
       const boundary = boundaryFromEntity(hit);
       if (boundary) {
-        const angleDeg = Number(el('hatch-angle').value) || 45;
-        const spacingMm = Math.max(0.5, Number(el('hatch-space').value) || 3);
+        // 角度は 0° も有効。空欄や数字でない時だけ既定値にする
+        const angle = parseNumber(el('hatch-angle').value);
+        const space = parseNumber(el('hatch-space').value);
+        const angleDeg = Number.isFinite(angle) ? angle : 45;
+        const spacingMm = Math.max(0.5, Number.isFinite(space) ? space : 3);
         commit(() => addEntity(state.doc, {
           type: 'hatch', boundary, angleDeg, spacingMm,
           layer: 'outline', lineType: 'thin', ...widthProp(state.pen.anno),
@@ -1019,7 +1031,8 @@ function handleToolPointerDown(s, ev) {
     } else if (hit.type !== 'line') {
       showMessage('トリム: 対象は直線のみです(矩形・連続線は先に「分解」)');
     } else {
-      const others = state.doc.entities.filter((en) => en.id !== hit.id);
+      // 見えている図形だけを切る相手にする
+      const others = state.doc.entities.filter((en) => en.id !== hit.id && isEntityVisible(state.doc, en));
       const pieces = trimLine(hit, screenToReal(s), others);
       if (pieces) {
         commit(() => {
@@ -1037,7 +1050,7 @@ function handleToolPointerDown(s, ev) {
     } else if (hit.type !== 'line') {
       showMessage('延長: 対象は直線のみです(矩形・連続線は先に「分解」)');
     } else {
-      const others = state.doc.entities.filter((en) => en.id !== hit.id);
+      const others = state.doc.entities.filter((en) => en.id !== hit.id && isEntityVisible(state.doc, en));
       const next = extendLine(hit, screenToReal(s), others);
       if (next) {
         commit(() => Object.assign(hit, next));
@@ -1063,7 +1076,7 @@ function handleToolPointerDown(s, ev) {
       const target = state.offsetPick;
       state.offsetPick = null;
       state.selection.clear();
-      const dist = Number(el('offset-dist').value);
+      const dist = parseNumber(el('offset-dist').value);
       if (!(dist > 0)) {
         showMessage('オフセット: 距離(mm)を正の数で入力してください');
       } else {
@@ -1369,11 +1382,14 @@ function scaleSelectionBy(f) {
   const center = selectionCenter();
   commit(() => scaleEntities(state.doc, [...state.selection], center, f));
 }
-el('rotate').addEventListener('click', () => rotateSelectionBy(Number(el('rotate-angle').value)));
-el('scale').addEventListener('click', () => scaleSelectionBy(Number(el('scale-factor').value)));
-// 角度・倍率の欄で Enter でも実行
-el('rotate-angle').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') el('rotate').click(); });
-el('scale-factor').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') el('scale').click(); });
+el('rotate').addEventListener('click', () => rotateSelectionBy(parseNumber(el('rotate-angle').value)));
+el('scale').addEventListener('click', () => scaleSelectionBy(parseNumber(el('scale-factor').value)));
+// 角度・倍率の欄で Enter でも実行(日本語入力の変換を確定する Enter は除く)
+const enterRuns = (buttonId) => (ev) => {
+  if (ev.key === 'Enter' && !isComposing(ev)) el(buttonId).click();
+};
+el('rotate-angle').addEventListener('keydown', enterRuns('rotate'));
+el('scale-factor').addEventListener('keydown', enterRuns('scale'));
 
 function selectAll() {
   if (state.tool !== 'select') setTool('select');
@@ -1393,7 +1409,8 @@ function selectionCenter() {
     b.minX = Math.min(b.minX, eb.minX); b.minY = Math.min(b.minY, eb.minY);
     b.maxX = Math.max(b.maxX, eb.maxX); b.maxY = Math.max(b.maxY, eb.maxY);
   }
-  return snapReal({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+  // グリッドに丸めず正確な中心を使う(丸めると回転・反転のたびに図形の位置がずれる)
+  return { x: geo.round6((b.minX + b.maxX) / 2), y: geo.round6((b.minY + b.maxY) / 2) };
 }
 function mirrorSelection(axis) {
   if (state.selection.size === 0) return;
@@ -1450,6 +1467,7 @@ function closeTextEntry() {
 }
 textEntry.addEventListener('keydown', (ev) => {
   ev.stopPropagation();
+  if (isComposing(ev)) return; // 日本語入力の変換中の Enter/Esc は入力欄に任せる
   if (ev.key === 'Escape') {
     closeTextEntry();
     return;
@@ -1494,10 +1512,10 @@ textEntry.addEventListener('keydown', (ev) => {
 
 // ---- 数値入力パネル ----
 function drawLineFromInputs() {
-  const x = Number(el('num-x').value);
-  const y = Number(el('num-y').value);
-  const len = Number(el('num-len').value);
-  const ang = Number(el('num-ang').value);
+  const x = parseNumber(el('num-x').value);
+  const y = parseNumber(el('num-y').value);
+  const len = parseNumber(el('num-len').value);
+  const ang = parseNumber(el('num-ang').value);
   if (![x, y, len, ang].every(Number.isFinite) || len <= 0) return;
   const start = originToAbs({ x, y });
   commitLine(start, geo.lineEndPoint(start, len, ang));
@@ -1509,7 +1527,7 @@ function applyNumPanel() {
     drawLineFromInputs();
     return;
   }
-  const v = (key) => Number(document.getElementById(`np-${key}`)?.value);
+  const v = (key) => parseNumber(document.getElementById(`np-${key}`)?.value ?? '');
   const x = v('x');
   const y = v('y');
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -1591,10 +1609,10 @@ el('num-draw').addEventListener('click', applyNumPanel);
 // どの欄でも Enter で反映。直線ドラフト中はその数値で確定。
 // 選択要素の編集中は、欄からフォーカスが外れた時(change)にも自動反映する。
 el('np-fields').addEventListener('keydown', (ev) => {
-  if (ev.key !== 'Enter') return;
+  if (ev.key !== 'Enter' || isComposing(ev)) return;
   if (state.draft?.kind === 'line') {
-    const len = Number(document.getElementById('num-len')?.value);
-    const ang = Number(document.getElementById('num-ang')?.value);
+    const len = parseNumber(document.getElementById('num-len')?.value ?? '');
+    const ang = parseNumber(document.getElementById('num-ang')?.value ?? '');
     if (Number.isFinite(len) && len > 0 && Number.isFinite(ang)) {
       commitLine(state.draft.start, geo.lineEndPoint(state.draft.start, len, ang));
       state.draft = null;
@@ -1605,6 +1623,7 @@ el('np-fields').addEventListener('keydown', (ev) => {
   }
 });
 el('np-fields').addEventListener('change', () => {
+  if (cancelPanelEdit) return;
   if (state.tool === 'select' && selectedEditable()) applyNumPanel();
 });
 
@@ -1929,7 +1948,17 @@ function cancelInProgress() {
 function handleEscape() {
   popup.close();
   closeTextEntry();
-  if (document.activeElement?.closest?.('#numpanel, #ribbon')) document.activeElement.blur();
+  const active = document.activeElement;
+  if (active?.closest?.('#numpanel, #ribbon')) {
+    // 欄を離れると change で値が反映されるので、Esc の間は反映を止めて元の値に戻す。
+    // 欄の入力をやめただけなので、選択の解除までは進めない
+    cancelPanelEdit = true;
+    active.blur();
+    cancelPanelEdit = false;
+    lastPanelKey = null;
+    render();
+    return;
+  }
   if (inProgress()) {
     cancelInProgress();
   } else if (state.tool !== 'select') {
@@ -1953,6 +1982,14 @@ function buildLayerPanel() {
     vis.checked = layer.visible;
     vis.addEventListener('change', () => {
       layer.visible = vis.checked;
+      if (!layer.visible) {
+        // 見えなくなった図形は選択から外す(見えないまま動かしたり消したりしないように)
+        for (const e of state.doc.entities) {
+          if (e.layer === layer.id) state.selection.delete(e.id);
+        }
+        if (state.selection.size === 0) state.subSel = null;
+        state.hover = null;
+      }
       markDirty();
       render();
     });
@@ -1972,13 +2009,32 @@ function confirmDiscard() {
   return !state.dirty || confirm('未保存の変更があります。破棄して続行しますか?');
 }
 
+// 図面を入れ替える時に、前の図面に紐づく選択・途中の操作をすべて消す
+function resetInteraction() {
+  state.selection = new Set();
+  state.subSel = null;
+  state.draft = null;
+  state.hover = null;
+  state.hoverDimText = false;
+  state.filletFirst = null;
+  state.offsetPick = null;
+  state.copyDrag = null;
+  state.dimTextDrag = null;
+  state.moveDrag = null;
+  state.rightPress = null;
+  state.snapHint = null;
+  state.midGuides = [];
+  closeTextEntry();
+  popup.close();
+  lastPanelKey = null;
+}
+
 function loadDocText(text, name) {
   try {
     const doc = deserialize(text);
     state.doc = doc;
     state.history = createHistory(100);
-    state.selection = new Set();
-    state.draft = null;
+    resetInteraction();
     state.fileName = name;
     state.dirty = false;
     discardBackup();
@@ -1988,20 +2044,25 @@ function loadDocText(text, name) {
     updateTitle();
     render();
   } catch (err) {
-    alert(err.message);
+    alert(`ファイルを読み込めませんでした: ${err?.message ?? err}`);
   }
 }
 
 async function saveFile(saveAs = false) {
-  const text = serialize(state.doc);
-  const name = saveAs
-    ? await state.fileio.saveAs(text, state.fileName)
-    : await state.fileio.save(text, state.fileName);
-  if (name) {
-    state.fileName = name;
-    state.dirty = false;
-    discardBackup();
-    updateTitle();
+  try {
+    const text = serialize(state.doc);
+    const name = saveAs
+      ? await state.fileio.saveAs(text, state.fileName)
+      : await state.fileio.save(text, state.fileName);
+    if (name) {
+      state.fileName = name;
+      state.dirty = false;
+      discardBackup();
+      updateTitle();
+    }
+  } catch (err) {
+    // 黙って失敗すると保存できたと思い込んでしまうので、必ず知らせる
+    alert(`保存できませんでした: ${err?.message ?? err}`);
   }
 }
 
@@ -2011,8 +2072,7 @@ el('file-new').addEventListener('click', () => {
   state.fileio.reset();
   state.doc = createDocument();
   state.history = createHistory(100);
-  state.selection = new Set();
-  state.draft = null;
+  resetInteraction();
   state.fileName = '図面.json';
   state.dirty = false;
   syncSettingsUI();
@@ -2023,8 +2083,12 @@ el('file-new').addEventListener('click', () => {
 });
 el('file-open').addEventListener('click', async () => {
   if (!confirmDiscard()) return;
-  const res = await state.fileio.open();
-  if (res) loadDocText(res.text, res.name);
+  try {
+    const res = await state.fileio.open();
+    if (res) loadDocText(res.text, res.name);
+  } catch (err) {
+    alert(`ファイルを開けませんでした: ${err?.message ?? err}`);
+  }
 });
 el('file-save').addEventListener('click', () => saveFile(false));
 el('file-saveas').addEventListener('click', () => saveFile(true));
