@@ -53,3 +53,10 @@ test('最も近い候補が勝つ', () => {
   // 端点(10,0)と中点(5,0)の間、端点寄り
   assert.equal(findSnap(doc, { x: 8, y: 0 }, 5).kind, 'end');
 });
+
+test('非表示レイヤーの図形にはスナップしない', () => {
+  const doc = docWith({ type: 'line', x1: 0, y1: 0, x2: 100, y2: 0, layer: 'aux' });
+  assert.deepEqual(findSnap(doc, { x: 99, y: 1 }, 3), { x: 100, y: 0, kind: 'end' });
+  doc.layers.find((l) => l.id === 'aux').visible = false;
+  assert.equal(findSnap(doc, { x: 99, y: 1 }, 3), null);
+});

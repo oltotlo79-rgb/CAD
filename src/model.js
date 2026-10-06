@@ -101,6 +101,10 @@ export function translateEntities(doc, ids, dx, dy) {
         e.p1 = [e.p1[0] + dx, e.p1[1] + dy];
         e.p2 = [e.p2[0] + dx, e.p2[1] + dy];
         e.tail = [e.tail[0] + dx, e.tail[1] + dy];
+      } else if (e.dimType === 'angle') {
+        e.vertex = [e.vertex[0] + dx, e.vertex[1] + dy];
+        e.p1 = [e.p1[0] + dx, e.p1[1] + dy];
+        e.p2 = [e.p2[0] + dx, e.p2[1] + dy];
       }
     } else if (e.type === 'leader') {
       e.points = e.points.map(([x, y]) => [x + dx, y + dy]);
@@ -423,6 +427,10 @@ export function mirrorEntities(doc, ids, axis, center) {
         e.p1 = mp(e.p1[0], e.p1[1]);
         e.p2 = mp(e.p2[0], e.p2[1]);
         e.tail = mp(e.tail[0], e.tail[1]);
+      } else if (e.dimType === 'angle') {
+        // 鏡映で回る向きが逆になるので、p1/p2 を入れ替えて同じ開きを測り続ける
+        e.vertex = mp(e.vertex[0], e.vertex[1]);
+        [e.p1, e.p2] = [mp(e.p2[0], e.p2[1]), mp(e.p1[0], e.p1[1])];
       }
     } else if (e.type === 'leader') {
       e.points = e.points.map(([x, y]) => mp(x, y));
@@ -585,9 +593,18 @@ export function entityBounds(e, k = 1) {
     return { minX: e.cx - dx, minY: e.cy - dy, maxX: e.cx + dx, maxY: e.cy + dy };
   }
   if (e.type === 'text') {
+    // 文字の枠(幅は文字数×高さの概算)を回転させた4隅で囲む
     const h = e.height / k;
     const w = e.content.length * h;
-    return { minX: e.x, minY: e.y, maxX: e.x + w, maxY: e.y + h };
+    const rot = (e.rotation ?? 0) * DEG;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const corners = [[0, 0], [w, 0], [w, h], [0, h]]
+      .map(([dx, dy]) => ({ x: e.x + dx * c - dy * s, y: e.y + dx * s + dy * c }));
+    return {
+      minX: Math.min(...corners.map((p) => p.x)), minY: Math.min(...corners.map((p) => p.y)),
+      maxX: Math.max(...corners.map((p) => p.x)), maxY: Math.max(...corners.map((p) => p.y)),
+    };
   }
   const pts = entitySegments(e).flat();
   const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -621,6 +638,13 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
     for (const [a, b] of layout.lines) {
       if (distancePointToSegment(p, a, b) <= tolMm) return true;
     }
+    // 角度寸法の円弧(描いている部分なので、ここをクリックしても選べる)
+    for (const arc of layout.arcs ?? []) {
+      if (Math.abs(distance(p, arc.c) - arc.r) > tolMm) continue;
+      let rel = angleDegOf(arc.c, p) - arc.startDeg;
+      while (rel < 0) rel += 360;
+      if (rel <= arc.endDeg - arc.startDeg + 1e-9) return true;
+    }
     const textH = layout.textMm / k;
     for (const t of layout.texts) {
       if (textBoxHit(t, textH, p, tolMm)) return true;
@@ -652,9 +676,10 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
     return rel <= sweep + 1e-9;
   }
   if (e.type === 'text') {
-    const b = entityBounds(e, k);
-    return p.x >= b.minX - tolMm && p.x <= b.maxX + tolMm &&
-           p.y >= b.minY - tolMm && p.y <= b.maxY + tolMm;
+    return textBoxHit(
+      { x: e.x, y: e.y, content: e.content, angleDeg: e.rotation ?? 0, align: 'left' },
+      e.height / k, p, tolMm,
+    );
   }
   for (const [a, b] of entitySegments(e)) {
     if (distancePointToSegment(p, a, b) <= tolMm) return true;
@@ -662,8 +687,28 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
   return false;
 }
 
+// 非表示レイヤーの要素は見えない扱い(選択・スナップ・ヒットの対象外)。未知のレイヤーは見える
+export function isEntityVisible(doc, e) {
+  const layer = doc.layers.find((l) => l.id === e.layer);
+  return layer ? layer.visible !== false : true;
+}
+
+// 全角の数字・小数点・符号を半角に直す(日本語入力のまま打った値も受け付ける)
+const FULLWIDTH = { '．': '.', '－': '-', '−': '-', '＋': '+', '，': '' };
+export function toHalfWidth(text) {
+  return String(text)
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFF10 + 0x30))
+    .replace(/[．－−＋，]/g, (ch) => FULLWIDTH[ch]);
+}
+
+// 入力欄の数値を読む。空や数字でないものは NaN(Number('') が 0 になるのを避ける)
+export function parseNumber(text) {
+  const s = toHalfWidth(text).trim();
+  return s === '' ? NaN : Number(s);
+}
+
 export function parseScale(text) {
-  const m = String(text).trim().match(/^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/);
+  const m = toHalfWidth(text).trim().match(/^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/);
   if (!m) return null;
   const num = Number(m[1]);
   const den = Number(m[2]);
