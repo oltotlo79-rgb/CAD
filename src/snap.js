@@ -1,7 +1,31 @@
 import {
   entitySnapPoints, entitySegments, entityBounds, isEntityVisible,
 } from './model.js';
-import { distance, segSegIntersection, segCircleIntersections } from './geometry.js';
+import {
+  distance, segSegIntersection, segCircleIntersections, round6,
+} from './geometry.js';
+
+const DEG = Math.PI / 180;
+
+// 円・円弧の円周上で stepDeg ごとの点(円弧は弧の範囲内だけ)。引出線の矢印の先に使う
+function perimeterPoints(e, stepDeg) {
+  if (e.type !== 'circle' && e.type !== 'arc') return [];
+  let sweep = e.type === 'arc' ? e.endAngle - e.startAngle : 360;
+  while (sweep < 0) sweep += 360;
+  const pts = [];
+  for (let a = 0; a < 360; a += stepDeg) {
+    if (e.type === 'arc') {
+      let rel = a - e.startAngle;
+      while (rel < 0) rel += 360;
+      while (rel >= 360) rel -= 360;
+      if (rel > sweep + 1e-9) continue;
+    }
+    pts.push({
+      x: round6(e.cx + e.r * Math.cos(a * DEG)), y: round6(e.cy + e.r * Math.sin(a * DEG)), kind: 'quad',
+    });
+  }
+  return pts;
+}
 
 function nearBounds(e, p, tolMm, k) {
   const b = entityBounds(e, k);
@@ -33,12 +57,14 @@ function intersectionsBetween(e1, e2) {
 
 // p の近傍(tolMm以内)で最も近いスナップ点を返す
 // 戻り値: { x, y, kind } | null。kind: end/mid/center/quad/intersection
-export function findSnap(doc, p, tolMm, k = 1) {
+// options.perimeterStepDeg: 円・円弧の円周の点を、上下左右に加えてこの角度ごとにも出す(引出線の矢印の先)
+export function findSnap(doc, p, tolMm, k = 1, options = {}) {
   const near = [];
   // 見えていない図形(非表示レイヤー)には吸着しない
   const candidates = doc.entities.filter((e) => isEntityVisible(doc, e) && nearBounds(e, p, tolMm, k));
   for (const e of candidates) {
-    for (const sp of entitySnapPoints(e)) {
+    const extra = options.perimeterStepDeg ? perimeterPoints(e, options.perimeterStepDeg) : [];
+    for (const sp of [...entitySnapPoints(e), ...extra]) {
       const d = distance(p, sp);
       if (d <= tolMm) near.push({ x: sp.x, y: sp.y, kind: sp.kind, d });
     }

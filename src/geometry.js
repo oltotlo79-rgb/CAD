@@ -128,3 +128,25 @@ export function distancePointToSegment(p, a, b) {
   t = Math.max(0, Math.min(1, t));
   return distance(p, { x: a.x + t * abx, y: a.y + t * aby });
 }
+
+// 多角形(頂点 [x,y] の配列)の図心=面積の重心。面積がない(一直線など)なら頂点の平均
+export function polygonCentroid(points) {
+  let a2 = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    const cross = x1 * y2 - x2 * y1;
+    a2 += cross;
+    cx += (x1 + x2) * cross;
+    cy += (y1 + y2) * cross;
+  }
+  if (Math.abs(a2) < 1e-12) {
+    return {
+      x: round6(points.reduce((s, p) => s + p[0], 0) / points.length) || 0,
+      y: round6(points.reduce((s, p) => s + p[1], 0) / points.length) || 0,
+    };
+  }
+  return { x: round6(cx / (3 * a2)) || 0, y: round6(cy / (3 * a2)) || 0 };
+}

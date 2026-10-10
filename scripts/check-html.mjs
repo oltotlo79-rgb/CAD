@@ -6,14 +6,20 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { HELP_TOPICS } from '../src/helpContent.js';
+import {
+  escapeInlineScript, unescapeInlineScript, minifyBundle, INLINE_SCRIPT,
+} from './dist-js.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
 const hash=content=>createHash('sha256').update(content).digest('hex');
 const files=['seizu.html','seizu.readable.html'];
-const html=await Promise.all(files.map(file=>readFile(path.join(root,'dist',file),'utf8')));
+// 改行コード(取り出した側のPCでCRLFになる)は比べない
+const html=await Promise.all(files.map(async file=>(await readFile(path.join(root,'dist',file),'utf8')).replace(/\r\n/g,'\n')));
 const scriptPattern=/<script>[\s\S]*?<\/script>/g;
 assert.equal(html[0].replace(scriptPattern,'<script></script>'),html[1].replace(scriptPattern,'<script></script>'),'JavaScript以外のHTML/CSSは完全一致');
 assert.notEqual(html[0].match(scriptPattern)[0],html[1].match(scriptPattern)[0],'JavaScriptの圧縮前後だけが異なる');
+const readableJs=unescapeInlineScript(html[1].match(INLINE_SCRIPT)[1]);
+assert.equal(html[0].match(INLINE_SCRIPT)[1].trimEnd(),escapeInlineScript(await minifyBundle(readableJs)).trimEnd(),'圧縮版のJavaScriptは非圧縮版をそのまま圧縮したもの');
 const output=path.join(root,'.tmp/help-qa');
 await mkdir(output,{recursive:true});
 const browser=await chromium.launch({headless:true});
@@ -27,6 +33,16 @@ try {
     page.on('request',request=>{if(/^https?:/.test(request.url()))external.push(request.url());});
     await page.goto(pathToFileURL(path.join(root,'dist',file)).href);
     await page.evaluate(()=>document.fonts.ready);
+    // タブの切り替えでボタンの段数が変わっても、作図領域の大きさにアプリが追従する(マウス位置のずれ防止)
+    for(const name of ['edit','view','annotate','file','draw']) {
+      await page.locator(`[data-tab="${name}"]`).click();
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const fits=await page.evaluate(()=>{
+        const box=document.getElementById('canvas').getBoundingClientRect();const view=window.__seizu.view;
+        return Math.abs(box.width-view.canvasWidth)<0.5&&Math.abs(box.height-view.canvasHeight)<0.5;
+      });
+      assert.ok(fits,`${file}: 「${name}」タブでも作図領域の大きさとアプリの座標計算が一致`);
+    }
     await page.locator('#help-open').click();
     await page.waitForSelector('#help:not([hidden])');
     const topics=[];

@@ -73,7 +73,7 @@ export const HELP_SCREENSHOTS = {
   },
   "tab-draw": {
     "src": "help/screenshots/tab-draw.png",
-    "width": 691,
+    "width": 860,
     "height": 52,
     "caption": "「作図」タブの実際のボタン。",
     "marks": []
@@ -537,6 +537,56 @@ export const HELP_SCREENSHOTS = {
     "caption": "Enterで確定した文字「取付板」。",
     "marks": []
   },
+  "polygon-control": {
+    "src": "help/screenshots/polygon-control.png",
+    "width": 184,
+    "height": 52,
+    "caption": "「正多角形」を押し、右の欄に角の数（六角形なら6）を入れる。",
+    "marks": []
+  },
+  "polygon-draft": {
+    "src": "help/screenshots/polygon-draft.png",
+    "width": 711,
+    "height": 360,
+    "caption": "中心①をクリックし、真上6.5mmの辺の真ん中②へマウスを置いた途中。点線の円は辺に接する円。",
+    "marks": [
+      {
+        "x": 320,
+        "y": 180,
+        "n": 1,
+        "dx": -30,
+        "dy": 26
+      },
+      {
+        "x": 320,
+        "y": 89,
+        "n": 2,
+        "dx": -30,
+        "dy": -26
+      }
+    ]
+  },
+  "polygon-result": {
+    "src": "help/screenshots/polygon-result.png",
+    "width": 640,
+    "height": 360,
+    "caption": "確定した二面幅13mmの六角形。上と下の辺が平らな向き。",
+    "marks": []
+  },
+  "polygon-numeric": {
+    "src": "help/screenshots/polygon-numeric.png",
+    "width": 1280,
+    "height": 39,
+    "caption": "正多角形の道具での数値入力。大きさの欄の名前のメニューで「二面幅」「対角」「一辺」を選ぶ。",
+    "marks": []
+  },
+  "polygon-modes": {
+    "src": "help/screenshots/polygon-modes.png",
+    "width": 800,
+    "height": 330,
+    "caption": "どれも大きさ「20」で描いた六角形。二面幅は辺と辺の間、対角は角と角の間、一辺は1つの辺の長さが20mmになる。",
+    "marks": []
+  },
   "thread-control": {
     "src": "help/screenshots/thread-control.png",
     "width": 157,
@@ -556,6 +606,36 @@ export const HELP_SCREENSHOTS = {
         "n": 1,
         "dx": -35,
         "dy": -35
+      }
+    ]
+  },
+  "thread-selected": {
+    "src": "help/screenshots/thread-selected.png",
+    "width": 420,
+    "height": 300,
+    "caption": "選択ツールで中心線①をクリックすると、ねじ穴の4つの図形がまとめて選ばれる（青色）。",
+    "marks": [
+      {
+        "x": 266,
+        "y": 150,
+        "n": 1,
+        "dx": 26,
+        "dy": -30
+      }
+    ]
+  },
+  "explode-thread": {
+    "src": "help/screenshots/explode-thread.png",
+    "width": 420,
+    "height": 300,
+    "caption": "分解したねじ穴。下穴の円①だけをクリックして選べる（ほかは黒のまま）。",
+    "marks": [
+      {
+        "x": 235,
+        "y": 175,
+        "n": 1,
+        "dx": 30,
+        "dy": 30
       }
     ]
   },
@@ -654,7 +734,7 @@ export const HELP_SCREENSHOTS = {
     "src": "help/screenshots/explode-after.png",
     "width": 650,
     "height": 330,
-    "caption": "分解後は4本の直線。下辺だけを選択できる。",
+    "caption": "分解後は4本の直線。下辺①だけを選択できる。",
     "marks": [
       {
         "x": 225,
@@ -1004,15 +1084,30 @@ export const HELP_SCREENSHOTS = {
     "caption": "Enterで確定。形の大きさを変えずに公差付きの表示に変わる。",
     "marks": []
   },
+  "leader-snap45": {
+    "src": "help/screenshots/leader-snap45.png",
+    "width": 720,
+    "height": 360,
+    "caption": "円の近くでは、円周の上下左右と斜め45°の点にピンクの丸い印が出て吸い付く（右上45°の例）。",
+    "marks": [
+      {
+        "x": 431,
+        "y": 109,
+        "n": 1,
+        "dx": -30,
+        "dy": 26
+      }
+    ]
+  },
   "leader-entry": {
     "src": "help/screenshots/leader-entry.png",
     "width": 930,
     "height": 330,
-    "caption": "①指す場所→②文字の位置をクリックし、注記を入力する。",
+    "caption": "①円周の斜め45°の点→②文字の位置をクリックし、注記を入力する。",
     "marks": [
       {
-        "x": 545,
-        "y": 105,
+        "x": 536,
+        "y": 94,
         "n": 1,
         "dx": -20,
         "dy": -24
@@ -1411,7 +1506,7 @@ export const HELP_SCREENSHOTS = {
   },
   "key-tool": {
     "src": "help/screenshots/key-tool.png",
-    "width": 691,
+    "width": 860,
     "height": 52,
     "caption": "Lを押すと「作図」タブが開き、「直線」が青く選ばれる。",
     "marks": []

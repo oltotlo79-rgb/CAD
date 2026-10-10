@@ -31,6 +31,12 @@ import { boundaryFromEntity } from './hatch.js';
 import { bomLayout, bomRowsFromBalloons } from './bom.js';
 import { threadHoleEntities } from './thread.js';
 import {
+  POLYGON_SIZE_MODES, parseSides, regularPolygonPoints, polygonFromCursor,
+} from './polygon.js';
+import {
+  nextGroupId, withGroupMembers, groupsFullyInside, ungroupEntities, renumberGroups,
+} from './groups.js';
+import {
   trimLine, extendLine, offsetEntity, filletLines, chamferLines,
 } from './editOps.js';
 import { mirrorEntities } from './model.js';
@@ -76,7 +82,9 @@ const state = {
   midGuides: [],   // 中心線モードで表示する近傍の中点ガイド
   mouseReal: null,
   hover: null,       // マウスを乗せている(クリックできる)図形のid
+  hoverGroup: null,  // 選択ツールでマウスを乗せた図形のまとまり(グループ番号)。全体を強調する
   hoverDimText: false, // 選択ツールで寸法の値の上にマウスがあるか
+  polygonMode: 'side', // 正多角形の大きさの決め方(side=二面幅 / corner=対角 / edge=一辺)
   mouseScreen: null, // キャンバス上のマウス位置(操作ガイドの表示位置)
   dimTextDrag: null, // 寸法の値のドラッグ { id, snapshotPushed }
   rightPress: null,  // 右ボタンを押した画面位置(動かさずに離したらメニュー)
@@ -121,7 +129,7 @@ function originToAbs(p) {
   return { x: p.x + state.doc.userOrigin.x, y: p.y + state.doc.userOrigin.y };
 }
 // 中心線モード: カーソル近傍の線分の中点・円/楕円の中心をガイドとして集める
-const DRAW_TOOLS = ['line', 'polyline', 'spline', 'rect', 'circle', 'arc', 'ellipse', 'earc'];
+const DRAW_TOOLS = ['line', 'polyline', 'spline', 'rect', 'polygon', 'circle', 'arc', 'ellipse', 'earc'];
 const MID_GUIDE_SKIP = ['dim', 'leader', 'bom', 'balloon', 'hatch', 'text', 'roughness', 'fcf'];
 function centerMidGuides(cursor) {
   if (state.pen.shape.preset !== 'center' || !DRAW_TOOLS.includes(state.tool)) return [];
@@ -136,6 +144,9 @@ function centerMidGuides(cursor) {
     if (e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse') {
       out.push({ x: e.cx, y: e.cy });
       continue;
+    }
+    if (e.type === 'polyline' && e.closed && e.points.length >= 3) {
+      out.push(geo.polygonCentroid(e.points)); // 正多角形などの中心
     }
     for (const [a, c] of entitySegments(e)) {
       out.push({ x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 });
@@ -184,7 +195,10 @@ function resolvePoint(s) {
   // 中心線モードでは端点・交点等への通常スナップを止める(角に吸われて
   // 図形の内側に閉じ込められるのを防ぐ)
   if (state.osnap && !centerMode) {
-    const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale));
+    // 引出線・バルーンの矢印の先(1点目)は、円・円弧の上下左右に加えて斜め45°の点にも吸い付く
+    const leaderTip = (state.tool === 'leader' || state.tool === 'balloon') && !state.draft;
+    const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale),
+      leaderTip ? { perimeterStepDeg: 45 } : {});
     if (hit) cands.push(hit);
   }
   if (state.projGuides) {
@@ -259,13 +273,31 @@ const DRAW_FIELDS = [
   { id: 'num-len', label: '長さ' },
   { id: 'num-ang', label: '角度', value: '0' },
 ];
+// 正多角形ツールの数値入力: 中心・大きさ・向き。大きさの欄の名前は、決め方を選ぶメニューを兼ねる
+function polygonFields() {
+  return [
+    { id: 'num-x', label: '中心X' },
+    { id: 'num-y', label: 'Y' },
+    { id: 'num-len', caption: polygonModeSelect },
+    { id: 'num-ang', label: '角度', value: '90' },
+  ];
+}
+function polygonModeSelect() {
+  const select = document.createElement('select');
+  select.id = 'polygon-mode';
+  select.title = '正多角形の大きさの決め方\n二面幅＝向かい合う辺と辺の間（2回目のクリックは辺の真ん中）\n'
+    + '対角＝向かい合う角と角の間（2回目のクリックは角）\n一辺＝1つの辺の長さ（2回目のクリックは角）';
+  for (const [value, mode] of Object.entries(POLYGON_SIZE_MODES)) select.add(new Option(mode.label, value));
+  select.value = state.polygonMode;
+  return select;
+}
 function buildFields(defs) {
   const wrap = el('np-fields');
   wrap.innerHTML = '';
   for (const d of defs) {
     const label = document.createElement('label');
-    const cap = document.createElement('span');
-    cap.textContent = d.label;
+    const cap = d.caption ? d.caption() : document.createElement('span');
+    if (!d.caption) cap.textContent = d.label;
     const input = document.createElement('input');
     input.id = d.id;
     input.size = 7;
@@ -281,7 +313,7 @@ function editSchema(sel) {
   const f2 = (v) => Number(v).toFixed(2);
   const f1 = (v) => Number(v).toFixed(1);
   if (sel.type === 'polyline' || sel.type === 'spline') {
-    const name = sel.type === 'polyline' ? '連続線' : 'スプライン';
+    const name = sel.type === 'spline' ? 'スプライン' : sel.closed ? '多角形' : '連続線';
     if (state.subSel != null && state.subSel < polySegmentCount(sel)) {
       const info = polySegmentInfo(sel, state.subSel);
       return {
@@ -358,6 +390,10 @@ function syncNumPanel() {
     el('np-title').textContent = schema.title;
     buildFields(schema.fields);
     el('num-draw').textContent = '更新';
+  } else if (state.tool === 'polygon') {
+    el('np-title').textContent = '正多角形:';
+    buildFields(polygonFields());
+    el('num-draw').textContent = '作図';
   } else {
     el('np-title').textContent = '数値入力:';
     buildFields(DRAW_FIELDS);
@@ -405,13 +441,19 @@ function commit(mutator) {
 }
 
 // ---- キャンバスサイズ・ビュー ----
+// 画面に表示されているキャンバスの大きさ(小数まで。拡大表示の125%などでも正確に)
+function canvasCssSize() {
+  const r = canvas.getBoundingClientRect();
+  return { w: r.width, h: r.height };
+}
 function refitView() {
   const p = paperDimensions(state.doc.paper.size, state.doc.paper.orientation);
-  state.view = vt.fitPaperView(p.width, p.height, canvas.clientWidth, canvas.clientHeight);
+  const { w, h } = canvasCssSize();
+  state.view = vt.fitPaperView(p.width, p.height, w, h);
 }
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const { w, h } = canvasCssSize();
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -423,6 +465,10 @@ function resizeCanvas() {
   render();
 }
 window.addEventListener('resize', resizeCanvas);
+// タブの切り替えでボタンが2段になる・数値入力の欄が折り返す・復元の帯が出るなど、ウィンドウの
+// 大きさが同じでもキャンバスの大きさは変わる。古い大きさのまま計算すると、絵が引き伸ばされて
+// マウスの位置と図形の見た目がずれる(クリックした所と違う所が選ばれる)ので、必ず追従する
+new ResizeObserver(resizeCanvas).observe(canvas);
 
 // ---- パン・ズーム ----
 // スクロール=上下パン / Shift+スクロール・Ctrl+スクロール=拡大縮小
@@ -574,6 +620,7 @@ function setTool(tool) {
   state.offsetPick = null;
   state.subSel = null;
   state.hover = null;
+  state.hoverGroup = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
   // キー操作で選んだツールも見えるよう、そのボタンがあるタブを開く
@@ -601,6 +648,64 @@ function commitRect(a, b) {
     type: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width, height, ...styleProps(),
   }));
 }
+
+// ---- 正多角形(できあがりは閉じた連続線) ----
+// 角数の欄の値。正しくなければ理由を表示して null
+function polygonSides() {
+  const n = parseSides(el('polygon-sides').value);
+  if (n == null) showMessage('正多角形: 角数は 3〜64 の整数で入れてください（六角形なら 6）');
+  return n;
+}
+function polygonModeLabel() {
+  return POLYGON_SIZE_MODES[state.polygonMode].label;
+}
+function commitPolygon(center, size, angleDeg) {
+  const sides = polygonSides();
+  if (!sides || !(size > 0)) return;
+  commit(() => addEntity(state.doc, {
+    type: 'polyline', closed: true,
+    points: regularPolygonPoints(center, sides, size, angleDeg, state.polygonMode),
+    ...styleProps(),
+  }));
+}
+// 作図中: マウスの位置から形を決め、プレビューと数値入力の欄に出す。
+// 点スナップで吸い付いた点ならその点に合わせ、そうでなければ向きを15°刻みにする
+function updatePolygonDraft() {
+  const d = state.draft;
+  if (d?.kind !== 'polygon') return;
+  const sides = parseSides(el('polygon-sides').value);
+  d.fit = sides ? polygonFromCursor(d.center, d.current, sides, state.polygonMode, !!state.snapHint) : null;
+  d.points = null;
+  if (!d.fit) return;
+  d.points = regularPolygonPoints(d.center, sides, d.fit.size, d.fit.angleDeg, state.polygonMode);
+  // 大きさの基準の円(二面幅=辺に接する円、対角・一辺=角を通る円)と、2回目のクリック点
+  const [p0, p1] = d.points;
+  const target = POLYGON_SIZE_MODES[state.polygonMode].target === 'side'
+    ? { x: (p0[0] + p1[0]) / 2, y: (p0[1] + p1[1]) / 2 } : { x: p0[0], y: p0[1] };
+  d.circleR = geo.distance(d.center, target);
+  d.handle = target;
+  const active = document.activeElement;
+  if (active !== el('num-len') && active !== el('num-ang')) {
+    el('num-len').value = d.fit.size.toFixed(2);
+    el('num-ang').value = d.fit.angleDeg.toFixed(1);
+  }
+}
+// 数値入力だけで描く(中心X・Y、大きさ、角度)
+function drawPolygonFromInputs() {
+  const x = parseNumber(el('num-x').value);
+  const y = parseNumber(el('num-y').value);
+  const size = parseNumber(el('num-len').value);
+  const ang = parseNumber(el('num-ang').value);
+  if (![x, y, ang].every(Number.isFinite) || !(size > 0)) {
+    showMessage(`正多角形: 中心X・Y、${polygonModeLabel()}、角度を数字で入れてください`);
+    return;
+  }
+  commitPolygon(originToAbs({ x, y }), size, ang);
+}
+el('polygon-sides').addEventListener('input', () => {
+  updatePolygonDraft();
+  render();
+});
 
 function finishPolyline() {
   const d = state.draft;
@@ -688,13 +793,17 @@ function selectInBox(startScreen, endScreen) {
   const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
   const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
   const k = vt.scaleK(state.doc.scale);
+  const inside = [];
   for (const e of state.doc.entities) {
     if (!isEntityVisible(state.doc, e)) continue;
     const bb = entityBounds(e, k);
     if (bb.minX >= minX && bb.maxX <= maxX && bb.minY >= minY && bb.maxY <= maxY) {
-      state.selection.add(e.id);
+      inside.push(e.id);
     }
   }
+  // ねじ穴などのまとまり(グループ)は、見えている部分がすべて枠に入った時だけまとめて選ぶ
+  const visible = (e) => isEntityVisible(state.doc, e);
+  for (const id of groupsFullyInside(state.doc.entities, inside, visible)) state.selection.add(id);
 }
 
 // ---- ツールのポインタ処理 ----
@@ -703,11 +812,17 @@ function handleToolPointerDown(s, ev) {
   if (state.tool === 'select') {
     const hit = hitTestScreen(s);
     if (hit) {
+      // ねじ穴などのまとまり(グループ)は、どれか1つをクリックすると全体を選ぶ
+      const ids = withGroupMembers(state.doc.entities, [hit.id]);
       if (ev.shiftKey) {
-        state.selection.has(hit.id) ? state.selection.delete(hit.id) : state.selection.add(hit.id);
+        const add = !state.selection.has(hit.id);
+        for (const id of ids) {
+          if (add) state.selection.add(id);
+          else state.selection.delete(id);
+        }
         state.subSel = null;
       } else if (!state.selection.has(hit.id)) {
-        state.selection = new Set([hit.id]);
+        state.selection = ids;
         state.subSel = null;
       } else if (state.selection.size === 1
         && (hit.type === 'polyline' || hit.type === 'spline')) {
@@ -746,6 +861,27 @@ function handleToolPointerDown(s, ev) {
     } else {
       commitRect(state.draft.start, p);
       state.draft = null;
+    }
+    render();
+  } else if (state.tool === 'polygon') {
+    // 正多角形: 中心 → 辺の真ん中(二面幅)または角(対角・一辺)
+    if (!state.draft) {
+      if (polygonSides()) {
+        state.draft = { kind: 'polygon', center: p, current: p };
+        const o = state.doc.userOrigin;
+        el('num-x').value = (p.x - o.x).toFixed(2);
+        el('num-y').value = (p.y - o.y).toFixed(2);
+      }
+    } else {
+      state.draft.current = p;
+      updatePolygonDraft();
+      const d = state.draft;
+      if (d.fit) {
+        state.draft = null;
+        commitPolygon(d.center, d.fit.size, d.fit.angleDeg);
+      } else {
+        polygonSides(); // 角数の欄が正しくなければ理由を表示
+      }
     }
     render();
   } else if (state.tool === 'polyline' || state.tool === 'spline') {
@@ -1017,11 +1153,13 @@ function handleToolPointerDown(s, ev) {
     }));
     setTool('select');
   } else if (state.tool === 'thread') {
-    // ねじ穴: クリック位置に 下穴円+谷3/4円弧+中心線十字 を一括生成
+    // ねじ穴: クリック位置に 下穴円+谷3/4円弧+中心線十字 を一括生成。
+    // 1つのまとまり(グループ)にして、まとめて選んで動かせるようにする(「分解」で別々に戻る)
     const parts = threadHoleEntities(p, el('thread-size').value, 3 / vt.scaleK(state.doc.scale));
     if (parts) {
+      const group = nextGroupId(state.doc.entities);
       commit(() => {
-        for (const props of parts) addEntity(state.doc, props);
+        for (const props of parts) addEntity(state.doc, { ...props, group });
       });
     }
   } else if (state.tool === 'trim') {
@@ -1037,7 +1175,9 @@ function handleToolPointerDown(s, ev) {
       if (pieces) {
         commit(() => {
           removeEntities(state.doc, [hit.id]);
-          for (const piece of pieces) addEntity(state.doc, piece);
+          // 切った残りは、元の線のまとまり(ねじ穴の中心線など)に残す
+          const group = hit.group != null ? { group: hit.group } : {};
+          for (const piece of pieces) addEntity(state.doc, { ...piece, ...group });
         });
       } else {
         showMessage('トリム: 他の要素との交点がありません');
@@ -1159,6 +1299,8 @@ function handleToolPointerMove(s) {
       const pl = dimPlacement(state.draft.p1, state.draft.p2, p, false);
       state.draft.orient = pl.orient;
       state.draft.offset = pl.offset;
+    } else if (state.draft.kind === 'polygon') {
+      updatePolygonDraft();
     }
   }
 }
@@ -1196,7 +1338,8 @@ canvas.addEventListener('pointerdown', (ev) => {
     state.rightPress = { screen: s };
     const hit = hitTestScreen(s);
     if (hit) {
-      const ids = state.selection.has(hit.id) ? [...state.selection] : [hit.id];
+      const ids = state.selection.has(hit.id) ? [...state.selection]
+        : [...withGroupMembers(state.doc.entities, [hit.id])];
       const p = snapReal(screenToReal(s));
       state.copyDrag = {
         ids, startReal: p, current: p,
@@ -1214,6 +1357,8 @@ function updateHover(s) {
   const busy = state.moveDrag || state.dimTextDrag || state.copyDrag || state.draft?.kind === 'box';
   const hit = busy ? null : hitTestScreen(s);
   state.hover = hit && toolAccepts(state.tool, hit) ? hit.id : null;
+  // 選択ツールでは、まとまり(ねじ穴など)全体を強調して、まとめて選ばれることを示す
+  state.hoverGroup = state.hover != null && state.tool === 'select' ? (hit.group ?? null) : null;
   state.hoverDimText = !!hit && state.tool === 'select' && isOverDimText(hit, s);
 }
 
@@ -1247,6 +1392,7 @@ canvas.addEventListener('pointermove', (ev) => {
 canvas.addEventListener('pointerleave', () => {
   state.mouseScreen = null;
   state.hover = null;
+  state.hoverGroup = null;
   render();
 });
 canvas.addEventListener('pointerup', (ev) => {
@@ -1348,9 +1494,10 @@ function pasteClipboard() {
   const dy = target ? target.y - center.y : 10;
   const ids = [];
   commit(() => {
-    for (const props of state.clipboard) {
-      ids.push(addEntity(state.doc, structuredClone(props)).id);
-    }
+    const items = state.clipboard.map((props) => structuredClone(props));
+    // 貼り付けたねじ穴などは、元とは別のまとまりにする
+    renumberGroups(items, nextGroupId(state.doc.entities));
+    for (const props of items) ids.push(addEntity(state.doc, props).id);
     translateEntities(state.doc, ids, dx, dy);
   });
   state.selection = new Set(ids);
@@ -1394,7 +1541,8 @@ el('scale-factor').addEventListener('keydown', enterRuns('scale'));
 function selectAll() {
   if (state.tool !== 'select') setTool('select');
   const visible = new Map(state.doc.layers.map((l) => [l.id, l.visible]));
-  state.selection = new Set(state.doc.entities
+  // 見えている図形と、それとまとまり(グループ)になっている図形
+  state.selection = withGroupMembers(state.doc.entities, state.doc.entities
     .filter((e) => visible.get(e.layer) !== false).map((e) => e.id));
   state.subSel = null;
   render();
@@ -1420,16 +1568,21 @@ function mirrorSelection(axis) {
 el('mirror-x').addEventListener('click', () => mirrorSelection('x'));
 el('mirror-y').addEventListener('click', () => mirrorSelection('y'));
 
-// 矩形・連続線を個別の直線に分解(トリム/フィレット/面取りの前処理に使う)
+// 分解: 矩形・連続線(正多角形を含む)を個別の直線に(トリム/フィレット/面取りの前処理)、
+// ねじ穴などのまとまり(グループ)を別々の図形に戻す
 function explodeSelection() {
-  const targets = state.doc.entities.filter((e) =>
-    state.selection.has(e.id) && (e.type === 'rect' || e.type === 'polyline'));
-  if (targets.length === 0) {
-    showMessage('分解: 矩形または連続線を選択してから押してください');
+  const selected = state.doc.entities.filter((e) => state.selection.has(e.id));
+  const grouped = selected.filter((e) => e.group != null);
+  const targets = selected.filter((e) =>
+    e.group == null && (e.type === 'rect' || e.type === 'polyline'));
+  if (grouped.length === 0 && targets.length === 0) {
+    showMessage('分解: 矩形・連続線・正多角形・ねじ穴を選択してから押してください');
     return;
   }
   const ids = [];
+  let groups = 0;
   commit(() => {
+    groups = ungroupEntities(state.doc.entities, grouped.map((e) => e.id));
     for (const e of targets) {
       for (const [a, b] of entitySegments(e)) {
         ids.push(addEntity(state.doc, {
@@ -1440,9 +1593,13 @@ function explodeSelection() {
     }
     removeEntities(state.doc, targets.map((e) => e.id));
   });
-  state.selection = new Set(ids);
+  // 分けた図形は選んだままにする(どれが分かれたか見えるように)
+  state.selection = new Set([...grouped.map((e) => e.id), ...ids]);
   state.subSel = null;
-  showMessage(`分解: ${targets.length}個の図形を${ids.length}本の直線にしました`);
+  const done = [];
+  if (groups > 0) done.push(`${groups}個のまとまり（ねじ穴など）を${grouped.length}個の図形に分けました`);
+  if (targets.length > 0) done.push(`${targets.length}個の図形を${ids.length}本の直線にしました`);
+  showMessage(`分解: ${done.join('、')}`);
   render();
 }
 el('explode').addEventListener('click', explodeSelection);
@@ -1524,7 +1681,8 @@ function drawLineFromInputs() {
 function applyNumPanel() {
   const sel = state.tool === 'select' ? selectedEditable() : null;
   if (!sel) {
-    drawLineFromInputs();
+    if (state.tool === 'polygon') drawPolygonFromInputs();
+    else drawLineFromInputs();
     return;
   }
   const v = (key) => parseNumber(document.getElementById(`np-${key}`)?.value ?? '');
@@ -1606,23 +1764,33 @@ function applyNumPanel() {
 }
 el('num-draw').addEventListener('click', applyNumPanel);
 
-// どの欄でも Enter で反映。直線ドラフト中はその数値で確定。
+// どの欄でも Enter で反映。直線・正多角形の作図中はその数値で確定。
 // 選択要素の編集中は、欄からフォーカスが外れた時(change)にも自動反映する。
 el('np-fields').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter' || isComposing(ev)) return;
-  if (state.draft?.kind === 'line') {
+  if (state.draft?.kind === 'line' || state.draft?.kind === 'polygon') {
     const len = parseNumber(document.getElementById('num-len')?.value ?? '');
     const ang = parseNumber(document.getElementById('num-ang')?.value ?? '');
     if (Number.isFinite(len) && len > 0 && Number.isFinite(ang)) {
-      commitLine(state.draft.start, geo.lineEndPoint(state.draft.start, len, ang));
+      const d = state.draft;
       state.draft = null;
+      if (d.kind === 'line') commitLine(d.start, geo.lineEndPoint(d.start, len, ang));
+      else commitPolygon(d.center, len, ang);
       render();
     }
   } else {
     applyNumPanel();
   }
 });
-el('np-fields').addEventListener('change', () => {
+el('np-fields').addEventListener('change', (ev) => {
+  if (ev.target.id === 'polygon-mode') {
+    // 正多角形の大きさの決め方を変えた(欄の名前も変わる)
+    state.polygonMode = ev.target.value;
+    ev.target.blur(); // すぐに数字のキー入力などが図面に効くように
+    updatePolygonDraft();
+    render();
+    return;
+  }
   if (cancelPanelEdit) return;
   if (state.tool === 'select' && selectedEditable()) applyNumPanel();
 });
@@ -1787,7 +1955,7 @@ function inProgress() {
 function openCanvasMenu(s, ev) {
   const hit = hitTestScreen(s);
   if (hit && !state.selection.has(hit.id)) {
-    state.selection = new Set([hit.id]);
+    state.selection = withGroupMembers(state.doc.entities, [hit.id]);
     state.subSel = null;
   }
   const entities = hit ? state.doc.entities.filter((e) => state.selection.has(e.id)) : [];
@@ -1892,6 +2060,9 @@ function liveValues() {
   if ((d.kind === 'polyline' || d.kind === 'spline') && d.points.length) return lenAng(d.points[d.points.length - 1]);
   if (d.kind === 'rect') return `幅 ${f(p.x - d.start.x)}  高さ ${f(p.y - d.start.y)}`;
   if (d.kind === 'circle') return `直径 ${(geo.distance(d.center, p) * 2).toFixed(2)}`;
+  if (d.kind === 'polygon' && d.fit) {
+    return `${d.points.length}角形  ${polygonModeLabel()} ${d.fit.size.toFixed(2)}  角度 ${d.fit.angleDeg.toFixed(1)}°`;
+  }
   if (d.kind === 'arc' && d.stage === 1) return `半径 ${geo.distance(d.center, p).toFixed(2)}`;
   if (d.kind === 'arc' && d.stage === 2) {
     let sweep = geo.angleDegOf(d.center, p) - geo.angleDegOf(d.center, d.startPoint);
@@ -1916,6 +2087,11 @@ function updateCursorTip() {
     return;
   }
   let guide = guideFor(state.tool, draftStage());
+  if (state.tool === 'polygon' && draftStage() === 1) {
+    // 2回目のクリックの場所は、大きさの決め方で変わる
+    const mode = POLYGON_SIZE_MODES[state.polygonMode];
+    guide = `正多角形: ${mode.target === 'side' ? '辺の真ん中' : '角'}の位置をクリック（数字を打つと${mode.label}を指定）`;
+  }
   if (state.tool === 'select') {
     guide = state.dimTextDrag ? '寸法の値を移動中（離すと確定）'
       : state.hoverDimText ? '寸法の値: 押したまま動かすと寸法線に沿って移動' : null;
@@ -1983,12 +2159,15 @@ function buildLayerPanel() {
     vis.addEventListener('change', () => {
       layer.visible = vis.checked;
       if (!layer.visible) {
-        // 見えなくなった図形は選択から外す(見えないまま動かしたり消したりしないように)
-        for (const e of state.doc.entities) {
-          if (e.layer === layer.id) state.selection.delete(e.id);
-        }
+        // 見えなくなった図形は選択から外す(見えないまま動かしたり消したりしないように)。
+        // ただし、ねじ穴などのまとまりは一部が見えていれば、隠れた部分も一緒に選んだままにする
+        // (中心線だけ置き去りにして動かすと、形がばらばらになるため)
+        const keep = state.doc.entities
+          .filter((e) => state.selection.has(e.id) && isEntityVisible(state.doc, e)).map((e) => e.id);
+        state.selection = withGroupMembers(state.doc.entities, keep);
         if (state.selection.size === 0) state.subSel = null;
         state.hover = null;
+        state.hoverGroup = null;
       }
       markDirty();
       render();
@@ -2015,6 +2194,7 @@ function resetInteraction() {
   state.subSel = null;
   state.draft = null;
   state.hover = null;
+  state.hoverGroup = null;
   state.hoverDimText = false;
   state.filletFirst = null;
   state.offsetPick = null;
@@ -2178,14 +2358,16 @@ window.addEventListener('keydown', (ev) => {
   }
   if (isTyping(ev)) return;
   const plainKey = !ev.ctrlKey && !ev.altKey && !ev.metaKey;
-  // 直線を描いている途中に数字を打つと、長さの欄に入力できる(Enterで確定)
-  if (plainKey && state.draft?.kind === 'line' && /^[0-9.]$/.test(ev.key)) {
+  // 直線・正多角形を描いている途中に数字を打つと、長さ(大きさ)の欄に入力できる(Enterで確定)
+  if (plainKey && (state.draft?.kind === 'line' || state.draft?.kind === 'polygon')
+    && /^[0-9.]$/.test(ev.key)) {
     ev.preventDefault();
     const len = el('num-len');
     len.value = ev.key;
     len.focus();
     len.setSelectionRange(len.value.length, len.value.length);
-    showMessage('長さを入力して Enter で確定（角度は右の欄）');
+    const what = state.draft.kind === 'line' ? '長さ' : polygonModeLabel();
+    showMessage(`${what}を入力して Enter で確定（角度は右の欄）`);
     return;
   }
   // 1文字キーでツールを切り替え

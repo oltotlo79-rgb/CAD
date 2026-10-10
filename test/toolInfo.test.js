@@ -5,7 +5,7 @@ import {
 } from '../src/toolInfo.js';
 
 const ALL_TOOLS = [
-  'select', 'line', 'polyline', 'rect', 'circle', 'arc', 'ellipse', 'earc', 'spline', 'text',
+  'select', 'line', 'polyline', 'rect', 'polygon', 'circle', 'arc', 'ellipse', 'earc', 'spline', 'text',
   'thread', 'dim', 'dia', 'rad', 'angle', 'chamfer', 'leader', 'roughness', 'fcf', 'hatch',
   'balloon', 'bom', 'trim', 'extend', 'offset', 'fillet', 'chamferEdit', 'mirror45', 'origin',
 ];
@@ -24,6 +24,7 @@ test('ショートカットキー: 1文字キーは重複せず、大文字小�
   assert.equal(toolForKey('L'), 'line');
   assert.equal(toolForKey('d'), 'dim');
   assert.equal(toolForKey('x'), 'trim');
+  assert.equal(toolForKey('n'), 'polygon'); // N角形
   assert.equal(toolForKey('q'), null);
   assert.equal(toolForKey('Enter'), null);
 });

@@ -320,8 +320,9 @@ function drawEntities(ctx, doc, view, state, k) {
     const isSelected = selection.has(e.id);
     // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)。太さは要素ごとの指定を優先
     const width = Math.max(1, strokeWidthMm(e) * view.pxPerMm);
-    // マウスを乗せた(クリックできる)図形は薄い青で強調
-    const isHover = !isSelected && state.hover === e.id;
+    // マウスを乗せた(クリックできる)図形は薄い青で強調。まとまり(ねじ穴など)は全体を強調
+    const isHover = !isSelected && (state.hover === e.id
+      || (state.hoverGroup != null && e.group === state.hoverGroup));
     ctx.strokeStyle = isSelected ? COLORS.selected : isHover ? COLORS.hover : COLORS.entity;
     ctx.lineWidth = isSelected ? width + 2 : isHover ? width + 1.5 : width;
     ctx.setLineDash(style.dashMm.map((mm) => Math.max(1.5, mm * view.pxPerMm)));
@@ -403,6 +404,20 @@ function drawDraft(ctx, doc, view, draft) {
         height: Math.abs(draft.current.y - draft.start.y),
       };
       strokeSegments(ctx, doc, view, entitySegments(e));
+    } else if (draft.kind === 'polygon') {
+      if (draft.points) {
+        strokeSegments(ctx, doc, view, entitySegments({ type: 'polyline', points: draft.points, closed: true }));
+        // 大きさの基準の円(二面幅=辺に接する円、対角・一辺=角を通る円)と、中心から2回目のクリック点まで
+        ctx.save();
+        ctx.globalAlpha = 0.45;
+        ctx.setLineDash([2, 4]);
+        const c = realToScreen(draft.center, doc, view);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, draft.circleR * scaleK(doc.scale) * view.pxPerMm, 0, Math.PI * 2);
+        ctx.stroke();
+        strokeSegments(ctx, doc, view, [[draft.center, draft.handle]]);
+        ctx.restore();
+      }
     } else if (draft.kind === 'polyline') {
       const pts = [...draft.points, draft.current];
       const segs = [];

@@ -432,3 +432,20 @@ test('hitTestEntity: 角度寸法は円弧の上をクリックしても当た�
   assert.equal(hitTestEntity(e, { x: c * 0.6, y: c * 0.6 }, 0.5), false, '円弧より内側');
   assert.equal(hitTestEntity(e, { x: 10, y: 0 }, 0.5), true, '頂点からの線の上');
 });
+
+test('duplicateEntities: グループごと複製すると、複製は元と別の新しいグループになる', () => {
+  const doc = createDocument();
+  const a = addEntity(doc, { type: 'circle', cx: 0, cy: 0, r: 2, group: 1 });
+  const b = addEntity(doc, { type: 'line', x1: -3, y1: 0, x2: 3, y2: 0, group: 1 });
+  const clones = duplicateEntities(doc, [a.id, b.id], 10, 0);
+  assert.equal(clones[0].group, clones[1].group);
+  assert.notEqual(clones[0].group, 1);
+  assert.deepEqual([a.group, b.group], [1, 1]); // 元のグループはそのまま
+});
+
+test('entitySnapPoints: 閉じた連続線(正多角形)は図心も「中心」になる', () => {
+  const hex = { type: 'polyline', closed: true, points: [[12, 0], [6, 10], [-6, 10], [-12, 0], [-6, -10], [6, -10]] };
+  assert.deepEqual(entitySnapPoints(hex).filter((p) => p.kind === 'center'), [{ x: 0, y: 0, kind: 'center' }]);
+  const open = { ...hex, closed: false };
+  assert.equal(entitySnapPoints(open).filter((p) => p.kind === 'center').length, 0);
+});
