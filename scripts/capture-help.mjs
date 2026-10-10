@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { regularPolygonPoints } from '../src/polygon.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const output = path.join(root, 'www/help/screenshots');
@@ -26,12 +27,13 @@ globalThis.__helpCapture = {
       dirty: false, draft: null, mouseReal: null, mouseScreen: null, message: null,
       snapHint: null, midGuides: [], copyDrag: null, offsetPick: null, filletFirst: null,
       moveDrag: null, dimTextDrag: null, panDrag: null, clipboard: null, rightPress: null,
-      hover: null, subSel: null, spaceDown: false, showGuide: true, show45: true,
+      hover: null, hoverGroup: null, subSel: null, spaceDown: false, showGuide: true, show45: true,
+      polygonMode: 'side',
       gridSnap: options.gridSnap ?? false, osnap: options.osnap ?? true,
       projGuides: options.projGuides ?? false,
       pen: {shape: {preset: 'outline', widthMm: null}, text: {textMm: 3.5}, anno: {textMm: 3.5, widthMm: null}},
     });
-    for (const [id, value] of Object.entries({'rotate-angle':'90', 'scale-factor':'2', 'offset-dist':'10', 'fillet-r':'5', 'hatch-angle':'45', 'hatch-space':'3', 'thread-size':'M6'})) el(id).value = value;
+    for (const [id, value] of Object.entries({'rotate-angle':'90', 'scale-factor':'2', 'offset-dist':'10', 'fillet-r':'5', 'hatch-angle':'45', 'hatch-space':'3', 'thread-size':'M6', 'polygon-sides':'6'})) el(id).value = value;
     for (const [id, prop] of Object.entries({'grid-snap':'gridSnap','osnap':'osnap','proj-guides':'projGuides','show-guide':'showGuide','show45':'show45'})) el(id).checked = state[prop];
     el('layer-panel').open = false; el('restore-banner').style.display = 'none';
     lastPanelKey = null; syncSettingsUI(); buildLayerPanel(); setTool('select');
@@ -50,7 +52,21 @@ globalThis.__helpCapture = {
   titleLayout() { return titleBlockLayout(state.doc); },
   bomLayout(e) { return bomLayout(e); },
 };`;
-const result = await build({stdin: {contents: source + hooks, resolveDir:path.join(root,'src'), sourcefile:'capture-app.js'}, bundle:true, format:'iife', write:false});
+// ヘルプに新しい図を足した直後は、まだその図が撮られていない。撮影用のアプリだけは、
+// 撮影前の図を仮の画像で代用して起動できるようにする(撮影後に helpScreenshots.js を作り直すので、
+// 配布物・テストでは全部の図がそろっているかを従来どおり確かめられる)
+const pendingShots = {
+  name: 'pending-help-screenshots',
+  setup(builder) {
+    builder.onLoad({filter:/[\\/]helpScreenshots\.js$/}, async args => ({
+      contents: (await readFile(args.path,'utf8')).replace('export const HELP_SCREENSHOTS =','const TAKEN =')
+        + `\nconst PENDING = {src:'help/screenshots/overview.png',width:1280,height:800,caption:'（撮影前の図）',marks:[]};`
+        + `\nexport const HELP_SCREENSHOTS = new Proxy(TAKEN, {get:(shots,key)=>shots[key] ?? (typeof key === 'string' ? PENDING : undefined)});\n`,
+      loader: 'js',
+    }));
+  },
+};
+const result = await build({stdin: {contents: source + hooks, resolveDir:path.join(root,'src'), sourcefile:'capture-app.js'}, bundle:true, format:'iife', write:false, plugins:[pendingShots]});
 const app = result.outputFiles[0].text;
 const index = await readFile(path.join(root,'www/index.html'),'utf8');
 const server = createServer(async (req, res) => {
@@ -72,7 +88,10 @@ await page.goto(`http://127.0.0.1:${server.address().port}`);
 await page.waitForFunction(()=>window.__helpCapture);
 await page.evaluate(()=>document.fonts.ready);
 const shots = {};
-const reset = options => page.evaluate(options=>window.__helpCapture.reset(options),options ?? {});
+// タブの切り替えでボタンの段数が変わるとキャンバスの大きさも変わる。アプリが新しい大きさに
+// 追従する(ResizeObserver)まで2フレーム待ってから、座標の計算やクリックをする
+const settle = () => page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+const reset = async options => {await page.evaluate(options=>window.__helpCapture.reset(options),options ?? {});await settle();};
 const point = (x,y) => page.evaluate(([x,y])=>window.__helpCapture.point(x,y),[x,y]);
 const move = async (x,y) => { const p=await point(x,y);await page.mouse.move(p.x,p.y); };
 const click = async (x,y,options={}) => {const p=await point(x,y);await page.mouse.click(p.x,p.y,options);};
@@ -81,7 +100,7 @@ const tool = async id => {
   if (panel) await tab(panel);
   await page.locator(`[data-tool="${id}"]`).click();
 };
-const tab = id => page.locator(`[data-tab="${id}"]`).click();
+const tab = async id => {await page.locator(`[data-tab="${id}"]`).click();await settle();};
 const blur = () => page.evaluate(()=>document.activeElement?.blur());
 const entities = () => page.evaluate(()=>window.__seizu.doc.entities);
 const rect = {type:'rect',x:50,y:70,width:100,height:50};
@@ -210,10 +229,48 @@ try {
   await reset();await tool('text');await click(70,100);await page.locator('#text-entry').fill('取付板');
   await shot('text-entry','文字の位置①をクリックして、白い入力欄に「取付板」と入力する。',{marks:[[70,100,1,-25,28]]});await page.locator('#text-entry').press('Enter');
   await finishShot('text-result','Enterで確定した文字「取付板」。');
+  // 正多角形: 角数 → 中心①・辺の真ん中② → できあがり / 数値入力 / 大きさの決め方の違い
+  await reset({zoom:14});await tool('polygon');
+  await control('polygon-control','「正多角形」を押し、右の欄に角の数（六角形なら6）を入れる。','[data-panel="draw"] .group:nth-child(2)');
+  await click(100,100);await move(100,106.5);
+  assert.equal(await page.evaluate(()=>window.__seizu.draft.fit.angleDeg),90);
+  await shot('polygon-draft','中心①をクリックし、真上6.5mmの辺の真ん中②へマウスを置いた途中。点線の円は辺に接する円。',{width:640,height:360,marks:[[100,100,1,-30,26],[100,106.5,2,-30,-26]]});
+  await click(100,106.5);
+  const hex=(await entities())[0];
+  assert.equal(hex.type,'polyline');assert.equal(hex.closed,true);assert.equal(hex.points.length,6);
+  await finishShot('polygon-result','確定した二面幅13mmの六角形。上と下の辺が平らな向き。',{width:640,height:360});
+  for(const [id,value] of [['num-x','90'],['num-y','90'],['num-len','13'],['num-ang','90']]) await page.locator(`#${id}`).fill(value);
+  await shot('polygon-numeric','正多角形の道具での数値入力。大きさの欄の名前のメニューで「二面幅」「対角」「一辺」を選ぶ。',{selector:'#numpanel',pad:0});
+  {
+    // どれも「20」で描いた六角形と、その20がどこを測っているかの寸法
+    const hexA=regularPolygonPoints({x:60,y:100},6,20,90,'side');
+    const hexB=regularPolygonPoints({x:115,y:100},6,20,0,'corner');
+    const hexC=regularPolygonPoints({x:180,y:100},6,20,0,'edge');
+    const poly=points=>({type:'polyline',closed:true,points});
+    const dim=(p1,p2,orient,offset)=>({type:'dim',dimType:'linear',orient,p1,p2,offset,layer:'dim',lineType:'thin',override:null});
+    const label=(x,y,content)=>({type:'text',x,y,content,height:3.5,layer:'note',lineType:'thin'});
+    await reset({zoom:4,center:[120,99],entities:[
+      poly(hexA),dim(hexA[1],hexA[3],'v',40),label(47,116,'二面幅 20'),
+      poly(hexB),dim(hexB[3],hexB[0],'h',84),label(104,112,'対角 20'),
+      poly(hexC),dim(hexC[4],hexC[5],'h',74),label(166,122,'一辺 20'),
+    ]});
+    await finishShot('polygon-modes','どれも大きさ「20」で描いた六角形。二面幅は辺と辺の間、対角は角と角の間、一辺は1つの辺の長さが20mmになる。',{center:[120,99],width:800,height:330});
+  }
   await reset({zoom:14});await tool('thread');await page.locator('#thread-size').selectOption('M6');
   await control('thread-control','「ねじ穴」の右で呼びM6を選ぶ。','[data-panel="draw"] .group:last-child');await click(100,100);
   assert.equal((await entities()).length,4);
   await finishShot('thread-result','M6の下穴円・3/4円弧・中心線の十字を同時に作図した実画面。',{marks:[[100,100,1,-35,-35]],width:420,height:300});
+  // まとまり(グループ): どれか1つのクリックで4つとも選ばれる → 分解で別々に
+  await tool('select');await click(104,100);
+  assert.equal(await page.evaluate(()=>window.__seizu.selection.size),4);
+  await finishShot('thread-selected','選択ツールで中心線①をクリックすると、ねじ穴の4つの図形がまとめて選ばれる（青色）。',{marks:[[104,100,1,26,-30]],width:420,height:300});
+  await tab('edit');await page.locator('#explode').click();
+  assert.ok((await entities()).every(e=>e.group==null));
+  await blur();await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(()=>window.__seizu.selection.size),0);
+  await click(101.77,98.23);
+  assert.equal(await page.evaluate(()=>window.__seizu.selection.size),1);
+  await finishShot('explode-thread','分解したねじ穴。下穴の円①だけをクリックして選べる（ほかは黒のまま）。',{marks:[[101.77,98.23,1,30,30]],width:420,height:300});
   await reset({entities:[rect]});await click(50,95);await page.keyboard.press('Delete');assert.equal((await entities()).length,0);
   await finishShot('delete-result','矩形を選んでDeleteを押すと、選択した図形が消える。');await page.keyboard.press('Control+z');
   assert.equal((await entities()).length,1);await finishShot('undo-result','Ctrl+Zで削除を取り消すと矩形が戻る。');
@@ -228,7 +285,10 @@ try {
   }
   await reset({entities:[rect],selection:[1]});await tab('edit');
   await finishShot('explode-before','分解前の矩形。4辺で1つの図形。');await page.locator('#explode').click();assert.equal((await entities()).length,4);
-  await click(75,70);await finishShot('explode-after','分解後は4本の直線。下辺だけを選択できる。',{marks:[[75,70,1]]});
+  // 分解した直後は4本とも選ばれているので、いったん選択を解いてから下辺だけをクリックする
+  await blur();await page.keyboard.press('Escape');
+  await click(75,70);assert.equal(await page.evaluate(()=>window.__seizu.selection.size),1);
+  await finishShot('explode-after','分解後は4本の直線。下辺①だけを選択できる。',{marks:[[75,70,1]]});
   const cross=[{type:'line',x1:45,y1:90,x2:160,y2:90},{type:'line',x1:120,y1:60,x2:120,y2:135}];
   await reset({entities:cross});await tool('trim');await move(145,90);
   await shot('trim-before','交点より右の余分な区間①をクリックして切り取る。',{width:800,marks:[[145,90,1]]});await click(145,90);
@@ -273,8 +333,13 @@ try {
   await reset({entities:[rect,linear]});await click(100,57.5,{clickCount:2});await page.locator('#text-entry').fill('100±0.1');
   await shot('dimension-edit','選択ツールで数字をダブルクリックし、「100±0.1」を入力する。',{center:[100,80],height:430});await page.locator('#text-entry').press('Enter');
   assert.equal((await entities())[1].override,'100±0.1');await finishShot('dimension-edit-result','Enterで確定。形の大きさを変えずに公差付きの表示に変わる。',{center:[100,80],height:430});
-  await reset({entities:[circle]});await tool('leader');await click(120,115);await click(155,135);await page.locator('#text-entry').fill('φ50 穴');
-  await shot('leader-entry','①指す場所→②文字の位置をクリックし、注記を入力する。',{width:930,marks:[[120,115,1],[155,135,2,-25,25]]});await page.locator('#text-entry').press('Enter');
+  // 矢印の先は円周の斜め45°の点にも吸い付く(半径25mmの円の右上)
+  const d45=25/Math.SQRT2;
+  await reset({entities:[circle]});await tool('leader');await move(100+d45+0.6,100+d45-0.5);
+  assert.equal(await page.evaluate(()=>window.__seizu.snapHint?.kind),'quad');
+  await shot('leader-snap45','円の近くでは、円周の上下左右と斜め45°の点にピンクの丸い印が出て吸い付く（右上45°の例）。',{width:720,height:360,marks:[[100+d45,100+d45,1,-30,26]]});
+  await click(100+d45+0.6,100+d45-0.5);await click(155,135);await page.locator('#text-entry').fill('φ50 穴');
+  await shot('leader-entry','①円周の斜め45°の点→②文字の位置をクリックし、注記を入力する。',{width:930,marks:[[100+d45,100+d45,1],[155,135,2,-25,25]]});await page.locator('#text-entry').press('Enter');
   await finishShot('leader-result','確定した引出線と注記「φ50 穴」。',{width:790});
   for(const [id,value] of [['roughness','Ra 1.6'],['fcf','//|0.02|A']]) {
     await reset({entities:[rect]});await tool(id);await click(80,120);await tool('select');await click(85,123,{clickCount:2});

@@ -51,8 +51,9 @@ export function buildContextMenu({
     { id: 'mirrorX', label: '左右反転' },
     { id: 'mirrorY', label: '上下反転' },
   );
-  if (entities.some((e) => e.type === 'rect' || e.type === 'polyline')) {
-    items.push({ id: 'explode', label: '分解（バラバラの直線にする）' });
+  // 矩形・連続線(正多角形を含む)は直線に、ねじ穴などのまとまり(グループ)は別々の図形にする
+  if (entities.some((e) => e.type === 'rect' || e.type === 'polyline' || e.group != null)) {
+    items.push({ id: 'explode', label: '分解（バラバラにする）' });
   }
 
   const styles = [];

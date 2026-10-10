@@ -65,3 +65,15 @@ test('連続線を描いている途中は「作図を終える」「作図を�
   const line = buildContextMenu({ entities: [], tool: 'line', drafting: 'line' });
   assert.deepEqual(ids(line).slice(0, 1), ['cancelDraft']);
 });
+
+test('ねじ穴などのグループ・正多角形(閉じた連続線)を選ぶと「分解」が出る', () => {
+  const group = [
+    { type: 'circle', group: 1, lineType: 'solid', layer: 'outline' },
+    { type: 'line', group: 1, lineType: 'chain', layer: 'center' },
+  ];
+  assert.ok(ids(buildContextMenu({ entities: group, tool: 'select' })).includes('explode'));
+  const poly = { type: 'polyline', closed: true, points: [[0, 0], [1, 0], [0, 1]], lineType: 'solid', layer: 'outline' };
+  assert.ok(ids(buildContextMenu({ entities: [poly], tool: 'select' })).includes('explode'));
+  const circle = { type: 'circle', lineType: 'solid', layer: 'outline' };
+  assert.ok(!ids(buildContextMenu({ entities: [circle], tool: 'select' })).includes('explode'));
+});

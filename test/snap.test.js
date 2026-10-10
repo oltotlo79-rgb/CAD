@@ -60,3 +60,26 @@ test('非表示レイヤーの図形にはスナップしない', () => {
   doc.layers.find((l) => l.id === 'aux').visible = false;
   assert.equal(findSnap(doc, { x: 99, y: 1 }, 3), null);
 });
+
+test('引出線用(perimeterStepDeg:45): 円周の斜め45°の点にも吸い付く', () => {
+  const doc = docWith({ type: 'circle', cx: 50, cy: 50, r: 20 });
+  const d = 20 / Math.SQRT2;
+  const near45 = { x: 50 + d + 0.5, y: 50 + d - 0.4 };
+  // ふだんは上下左右(90°ごと)だけなので、斜めの位置には吸い付かない
+  assert.equal(findSnap(doc, near45, 2), null);
+  const hit = findSnap(doc, near45, 2, 1, { perimeterStepDeg: 45 });
+  assert.equal(hit.kind, 'quad');
+  assert.ok(Math.abs(hit.x - (50 + d)) < 1e-6 && Math.abs(hit.y - (50 + d)) < 1e-6);
+  // 225°(左下)も
+  const sw = findSnap(doc, { x: 50 - d, y: 50 - d + 0.3 }, 2, 1, { perimeterStepDeg: 45 });
+  assert.ok(Math.abs(sw.x - (50 - d)) < 1e-6 && Math.abs(sw.y - (50 - d)) < 1e-6);
+});
+
+test('引出線用(perimeterStepDeg:45): 円弧は弧の範囲内の45°ごとの点だけ', () => {
+  const doc = docWith({ type: 'arc', cx: 0, cy: 0, r: 10, startAngle: 0, endAngle: 90 });
+  const d = 10 / Math.SQRT2;
+  const mid = findSnap(doc, { x: d + 0.3, y: d }, 2, 1, { perimeterStepDeg: 45 });
+  assert.ok(Math.abs(mid.x - d) < 1e-6 && Math.abs(mid.y - d) < 1e-6);
+  // 弧のない側(225°)には点を作らない
+  assert.equal(findSnap(doc, { x: -d, y: -d }, 2, 1, { perimeterStepDeg: 45 }), null);
+});

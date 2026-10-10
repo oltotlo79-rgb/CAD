@@ -1,7 +1,7 @@
 import { FRAME_MARGIN_MM } from './papers.js';
 import {
   distance, angleDegOf, distancePointToSegment, catmullRomPoints,
-  lineEndPoint, round6,
+  lineEndPoint, round6, polygonCentroid,
 } from './geometry.js';
 import {
   balloonLayout, annotationLayout, dimAxis, textBoxHit,
@@ -9,6 +9,7 @@ import {
 import { DEFAULT_TITLE_FIELDS } from './titleBlock.js';
 import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
 import { bomLayout } from './bom.js';
+import { nextGroupId, renumberGroups } from './groups.js';
 
 // 線種ごとの描画スタイル。太さ・破線は用紙上mm(縮尺に依存しない)
 export const LINE_STYLES = {
@@ -328,10 +329,13 @@ export function scaleEntities(doc, ids, center, f) {
 
 export function duplicateEntities(doc, ids, dx, dy) {
   const clones = [];
+  const freeGroup = nextGroupId(doc.entities);
   for (const e of doc.entities.filter((en) => ids.includes(en.id))) {
     const { id, ...rest } = e;
     clones.push(addEntity(doc, structuredClone(rest)));
   }
+  // 複製したねじ穴などは、元とは別のまとまりにする
+  renumberGroups(clones, freeGroup);
   translateEntities(doc, clones.map((e) => e.id), dx, dy);
   return clones;
 }
@@ -527,6 +531,11 @@ export function entitySnapPoints(e) {
     if (e.type === 'polyline' && !e.closed && e.points.length > 0) {
       const last = e.points[e.points.length - 1];
       push(last[0], last[1], 'end');
+    }
+    if (e.type === 'polyline' && e.closed && e.points.length >= 3) {
+      // 閉じた形(正多角形など)は図心を中心とする
+      const c = polygonCentroid(e.points);
+      push(c.x, c.y, 'center');
     }
   } else if (e.type === 'spline') {
     for (const [x, y] of e.points) push(x, y, 'end');

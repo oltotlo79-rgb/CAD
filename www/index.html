@@ -54,6 +54,10 @@
         <button class="tool" data-tool="text">文字</button>
       </div>
       <div class="group">
+        <button class="tool" data-tool="polygon">正多角形</button>
+        <label title="角の数（3〜64）。6なら六角形、8なら八角形"><input id="polygon-sides" size="2" value="6">角</label>
+      </div>
+      <div class="group">
         <button class="tool" data-tool="thread">ねじ穴</button>
         <select id="thread-size" title="ねじの太さ(呼び)。M6なら直径6mmのねじ">
           <option>M3</option><option>M4</option><option>M5</option>
@@ -94,7 +98,7 @@
       <div class="group">
         <button id="mirror-x" title="左右反転&#10;選んだ図形を左右さかさまにする">左右反転</button>
         <button id="mirror-y" title="上下反転&#10;選んだ図形を上下さかさまにする">上下反転</button>
-        <button id="explode" title="分解&#10;選んだ四角形・連続線をバラバラの直線にする（トリムや角を丸める前に使う）">分解</button>
+        <button id="explode" title="分解&#10;選んだ四角形・連続線・正多角形をバラバラの直線にする（トリムや角を丸める前に使う）。ねじ穴は円・円弧・中心線の別々の図形に分ける">分解</button>
       </div>
       <div class="group">
         <button class="tool" data-tool="trim">トリム</button>

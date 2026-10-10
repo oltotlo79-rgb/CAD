@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   round6, distance, angleDegOf, lineEndPoint, snapToGrid, distancePointToSegment,
-  rotate90Point, segSegIntersection, segCircleIntersections,
+  rotate90Point, segSegIntersection, segCircleIntersections, polygonCentroid,
 } from '../src/geometry.js';
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} !~ ${b}`);
@@ -66,4 +66,13 @@ test('distancePointToSegment: 中央上は垂線距離、端の外は端点距�
   near(distancePointToSegment({ x: 5, y: 3 }, a, b), 3);
   near(distancePointToSegment({ x: 14, y: 3 }, a, b), 5);
   near(distancePointToSegment({ x: 2, y: 0 }, a, a), 2); // 零長セグメント
+});
+
+test('polygonCentroid: 多角形の図心(面積の重心)。面積がなければ頂点の平均', () => {
+  assert.deepEqual(polygonCentroid([[0, 0], [10, 0], [10, 10], [0, 10]]), { x: 5, y: 5 });
+  // 頂点が偏っていても面積の重心(L字)
+  const l = polygonCentroid([[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]]);
+  near(l.x, 25 / 3, 1e-6); // 座標は小数6桁に丸める
+  near(l.y, 25 / 3, 1e-6);
+  assert.deepEqual(polygonCentroid([[0, 0], [5, 0], [10, 0]]), { x: 5, y: 0 });
 });

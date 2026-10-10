@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const TOOL_IDS = [
-  'select', 'line', 'polyline', 'rect', 'circle', 'arc', 'ellipse', 'earc', 'spline', 'text', 'thread',
+  'select', 'line', 'polyline', 'rect', 'polygon', 'circle', 'arc', 'ellipse', 'earc', 'spline', 'text', 'thread',
   'dim', 'dia', 'rad', 'angle', 'chamfer', 'leader', 'roughness', 'fcf', 'hatch', 'balloon', 'bom',
   'trim', 'extend', 'offset', 'fillet', 'chamferEdit', 'mirror45', 'origin',
 ];
