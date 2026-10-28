@@ -36,7 +36,7 @@ globalThis.__helpCapture = {
     for (const [id, value] of Object.entries({'rotate-angle':'90', 'scale-factor':'2', 'offset-dist':'10', 'fillet-r':'5', 'hatch-angle':'45', 'hatch-space':'3', 'thread-size':'M6', 'polygon-sides':'6'})) el(id).value = value;
     for (const [id, prop] of Object.entries({'grid-snap':'gridSnap','osnap':'osnap','proj-guides':'projGuides','show-guide':'showGuide','show45':'show45'})) el(id).checked = state[prop];
     el('layer-panel').open = false; el('restore-banner').style.display = 'none';
-    lastPanelKey = null; syncSettingsUI(); buildLayerPanel(); setTool('select');
+    lastPanelKey = null; syncSettingsUI(); buildLayerPanel(); buildDashPanel(); setTool('select');
     activateTab(options.tab ?? 'draw');
     const z = options.zoom ?? 4;
     const [cx, cy] = options.center ?? [100, 100];
@@ -197,6 +197,8 @@ try {
   await page.locator('#np-len').fill('80');await page.locator('#np-len').press('Enter');
   assert.ok(Math.abs(Math.hypot((await entities())[0].x2-50,(await entities())[0].y2-80)-80)<1e-4);
   await finishShot('numeric-line-result','長さを80に変更してEnter。始点を保ったまま終点が動く。');
+  assert.equal(await page.evaluate(()=>window.__seizu.referencePoint?.label),'始点');
+  await finishShot('numeric-reference','選んだ直線の始点にオレンジの◎と「始点（X・Yの基準）」が出る。数値欄のX・Yはこの点の位置。',{center:[70,90],width:600,height:300});
   await reset();await tool('polyline');
   for(const [x,y] of [[50,70],[75,120],[125,120],[150,70]])await click(x,y);
   await move(155,65);await shot('polyline-draft','①→②→③→④とクリックして、Enterで確定する。',{marks:[[50,70,1],[75,120,2],[125,120,3],[150,70,4]]});
@@ -341,6 +343,25 @@ try {
   await click(100+d45+0.6,100+d45-0.5);await click(155,135);await page.locator('#text-entry').fill('φ50 穴');
   await shot('leader-entry','①円周の斜め45°の点→②文字の位置をクリックし、注記を入力する。',{width:930,marks:[[100+d45,100+d45,1],[155,135,2,-25,25]]});await page.locator('#text-entry').press('Enter');
   await finishShot('leader-result','確定した引出線と注記「φ50 穴」。',{width:790});
+  // 追従: 四角の角に寸法、上の辺に引出線、真ん中に中心線。四角の幅を数字で変えると付いてくる
+  await reset({center:[115,92],entities:[
+    {type:'rect',x:50,y:70,width:100,height:50}, linear,
+    {type:'line',x1:100,y1:62,x2:100,y2:128,lineType:'chain',layer:'center'},
+    {type:'leader',points:[[120,120],[140,134]],content:'C1',layer:'dim',lineType:'thin',override:null},
+  ]});
+  await click(50,95);
+  assert.equal(await page.evaluate(()=>window.__seizu.selection.size),1);
+  await finishShot('follow-before','①四角の右下の角に付けた寸法（100）、上の辺の引出線、真ん中の中心線。四角を選んだところ。',{center:[115,92],width:900,height:420,marks:[[150,70,1,28,-28]]});
+  await page.locator('#np-w').fill('130');await page.locator('#np-w').press('Enter');
+  const followed=await entities();
+  assert.deepEqual(followed[1].p2,[180,70]);assert.equal(followed[2].x1,115);
+  await finishShot('follow-after','数値欄で幅を130にすると、②寸法の端が新しい角に付いていき数字も130に。中心線・引出線も付いてくる。',{center:[115,92],width:900,height:420,marks:[[180,70,2,28,-28]]});
+  // 寸法線を押したまま動かす(押した時点で寸法だけが選ばれる。直前にクリックするとダブルクリック扱いになるので避ける)
+  await drag(70,55,70,43);
+  assert.deepEqual(await page.evaluate(()=>[...window.__seizu.selection]),[2]);
+  const moved=(await entities())[1];
+  assert.deepEqual([moved.p1,moved.p2],[[50,70],[180,70]]);assert.ok(Math.abs(moved.offset-43)<0.01,JSON.stringify(moved));
+  await finishShot('follow-dimline','寸法だけを選んで下へドラッグすると、四角に付いた点は残り、寸法線の位置だけが動く。',{center:[115,88],width:900,height:420});
   for(const [id,value] of [['roughness','Ra 1.6'],['fcf','//|0.02|A']]) {
     await reset({entities:[rect]});await tool(id);await click(80,120);await tool('select');await click(85,123,{clickCount:2});
     // 記号の実際の当たり判定内で編集欄が開くことを確認する。
@@ -365,6 +386,16 @@ try {
   const styles=[['solid','outline','外形線'],['dashed','hidden','かくれ線'],['chain','center','中心線'],['chain2','outline','想像線'],['thin','outline','細実線'],['thin','aux','補助線']];
   await reset({entities:styles.flatMap(([lineType,layer,name],i)=>[{type:'line',x1:50,y1:140-i*16,x2:130,y2:140-i*16,lineType,layer},{type:'text',x:140,y:138-i*16,content:name,heightMm:3.5,layer:'note'}])});
   await finishShot('line-types','同じ画面倍率で比較した6種類の線。線種ごとの太さと破線間隔も実際の描画。',{center:[120,100],width:800,height:450});
+  // 線種の間隔: 表 → 中心線を 16・2・0.5 にした前後
+  const dashLines=[['dashed','hidden','かくれ線'],['chain','center','中心線'],['chain2','outline','想像線']];
+  await reset({center:[105,100],entities:dashLines.flatMap(([lineType,layer,name],i)=>[{type:'line',x1:45,y1:116-i*16,x2:145,y2:116-i*16,lineType,layer},{type:'text',x:152,y:114-i*16,content:name,height:3.5,layer:'note'}])});
+  await finishShot('dash-before','はじめの間隔。かくれ線は3・1.5、中心線と想像線は8・1.5・1.5（紙の上のmm）。',{center:[105,100],width:800,height:300});
+  await tab('view');await page.locator('#dash-panel summary').click();
+  await shot('dash-controls','「表示・設定」→「線種の間隔」で開く表。線種ごとに線の長さ・隙間・短い線を入れ、右の見本で形を確かめる。',{selector:'#dash-list',pad:12});
+  for(const [key,value] of [['dash','16'],['gap','2'],['dot','0.5']]) {await page.locator(`#dash-chain-${key}`).fill(value);await page.locator(`#dash-chain-${key}`).press('Tab');}
+  assert.deepEqual(await page.evaluate(()=>window.__seizu.doc.dashPatterns.chain),{dash:16,gap:2,dot:0.5});
+  await page.locator('#dash-panel summary').click();
+  await finishShot('dash-after','中心線を「線の長さ16・隙間2・短い線0.5」にした結果。ほかの線種は変わらない。',{center:[105,100],width:800,height:300});
   await tool('line');await page.locator('#line-style').selectOption('hidden');
   await control('style-controls','線種「かくれ線」、太さ「標準」、文字3.5mmの実際のメニュー。','#ribbon .style');
   await reset({entities:[{type:'line',x1:50,y1:100,x2:150,y2:100}, {type:'text',x:75,y:115,content:'取付板',heightMm:3.5}],selection:[1,2]});

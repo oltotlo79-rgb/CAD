@@ -7,7 +7,7 @@ import {
   mirrorEntities, entitySnapPoints, entityBounds, hitTestEntity,
   LINE_STYLES, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment, ellipsePoint,
-  isEntityVisible, parseNumber,
+  isEntityVisible, parseNumber, referencePoint,
 } from '../src/model.js';
 import { dimText, dimLayout } from '../src/dims.js';
 import { hatchSegments } from '../src/hatch.js';
@@ -448,4 +448,17 @@ test('entitySnapPoints: 閉じた連続線(正多角形)は図心も「中心」
   assert.deepEqual(entitySnapPoints(hex).filter((p) => p.kind === 'center'), [{ x: 0, y: 0, kind: 'center' }]);
   const open = { ...hex, closed: false };
   assert.equal(entitySnapPoints(open).filter((p) => p.kind === 'center').length, 0);
+});
+
+test('referencePoint: 数値欄のX・Yが図形のどの点かを返す(選択時の印に使う)', () => {
+  assert.deepEqual(referencePoint({ type: 'line', x1: 1, y1: 2, x2: 9, y2: 9 }), { x: 1, y: 2, label: '始点' });
+  assert.deepEqual(referencePoint({ type: 'circle', cx: 5, cy: 6, r: 2 }), { x: 5, y: 6, label: '中心' });
+  assert.deepEqual(referencePoint({ type: 'arc', cx: 5, cy: 6, r: 2, startAngle: 0, endAngle: 90 }), { x: 5, y: 6, label: '中心' });
+  assert.deepEqual(referencePoint({ type: 'ellipse', cx: 5, cy: 6, rx: 2, ry: 1 }), { x: 5, y: 6, label: '中心' });
+  assert.deepEqual(referencePoint({ type: 'rect', x: 3, y: 4, width: 10, height: 5 }), { x: 3, y: 4, label: '左下' });
+  assert.deepEqual(referencePoint({ type: 'text', x: 3, y: 4, content: 'a', height: 3.5 }), { x: 3, y: 4, label: '位置' });
+  const poly = { type: 'polyline', points: [[0, 0], [10, 0], [10, 10]], closed: false };
+  assert.deepEqual(referencePoint(poly), { x: 0, y: 0, label: '始点' });
+  assert.deepEqual(referencePoint(poly, 1), { x: 10, y: 0, label: '線分2の始点' });
+  assert.equal(referencePoint({ type: 'dim', dimType: 'linear' }), null);
 });

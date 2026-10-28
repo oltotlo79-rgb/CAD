@@ -94,7 +94,7 @@ export const HELP_SCREENSHOTS = {
   },
   "tab-view": {
     "src": "help/screenshots/tab-view.png",
-    "width": 1056,
+    "width": 1141,
     "height": 52,
     "caption": "「表示・設定」タブの実際のボタン。",
     "marks": []
@@ -235,6 +235,13 @@ export const HELP_SCREENSHOTS = {
     "caption": "長さを80に変更してEnter。始点を保ったまま終点が動く。",
     "marks": []
   },
+  "numeric-reference": {
+    "src": "help/screenshots/numeric-reference.png",
+    "width": 600,
+    "height": 300,
+    "caption": "選んだ直線の始点にオレンジの◎と「始点（X・Yの基準）」が出る。数値欄のX・Yはこの点の位置。",
+    "marks": []
+  },
   "polyline-draft": {
     "src": "help/screenshots/polyline-draft.png",
     "width": 871,
@@ -317,7 +324,7 @@ export const HELP_SCREENSHOTS = {
   "numeric-rect": {
     "src": "help/screenshots/numeric-rect.png",
     "width": 1280,
-    "height": 39,
+    "height": 45,
     "caption": "矩形の左下X・Y、幅=100、高さ=50、回転=0を示す実際の入力欄。",
     "marks": []
   },
@@ -1128,6 +1135,43 @@ export const HELP_SCREENSHOTS = {
     "caption": "確定した引出線と注記「φ50 穴」。",
     "marks": []
   },
+  "follow-before": {
+    "src": "help/screenshots/follow-before.png",
+    "width": 900,
+    "height": 420,
+    "caption": "①四角の右下の角に付けた寸法（100）、上の辺の引出線、真ん中の中心線。四角を選んだところ。",
+    "marks": [
+      {
+        "x": 590,
+        "y": 298,
+        "n": 1,
+        "dx": 28,
+        "dy": -28
+      }
+    ]
+  },
+  "follow-after": {
+    "src": "help/screenshots/follow-after.png",
+    "width": 900,
+    "height": 420,
+    "caption": "数値欄で幅を130にすると、②寸法の端が新しい角に付いていき数字も130に。中心線・引出線も付いてくる。",
+    "marks": [
+      {
+        "x": 710,
+        "y": 298,
+        "n": 2,
+        "dx": 28,
+        "dy": -28
+      }
+    ]
+  },
+  "follow-dimline": {
+    "src": "help/screenshots/follow-dimline.png",
+    "width": 900,
+    "height": 420,
+    "caption": "寸法だけを選んで下へドラッグすると、四角に付いた点は残り、寸法線の位置だけが動く。",
+    "marks": []
+  },
   "roughness-edit": {
     "src": "help/screenshots/roughness-edit.png",
     "width": 650,
@@ -1248,6 +1292,27 @@ export const HELP_SCREENSHOTS = {
     "width": 800,
     "height": 450,
     "caption": "同じ画面倍率で比較した6種類の線。線種ごとの太さと破線間隔も実際の描画。",
+    "marks": []
+  },
+  "dash-before": {
+    "src": "help/screenshots/dash-before.png",
+    "width": 800,
+    "height": 300,
+    "caption": "はじめの間隔。かくれ線は3・1.5、中心線と想像線は8・1.5・1.5（紙の上のmm）。",
+    "marks": []
+  },
+  "dash-controls": {
+    "src": "help/screenshots/dash-controls.png",
+    "width": 483,
+    "height": 172,
+    "caption": "「表示・設定」→「線種の間隔」で開く表。線種ごとに線の長さ・隙間・短い線を入れ、右の見本で形を確かめる。",
+    "marks": []
+  },
+  "dash-after": {
+    "src": "help/screenshots/dash-after.png",
+    "width": 800,
+    "height": 300,
+    "caption": "中心線を「線の長さ16・隙間2・短い線0.5」にした結果。ほかの線種は変わらない。",
     "marks": []
   },
   "style-controls": {
@@ -1388,7 +1453,7 @@ export const HELP_SCREENSHOTS = {
   "origin-numeric": {
     "src": "help/screenshots/origin-numeric.png",
     "width": 1280,
-    "height": 39,
+    "height": 45,
     "caption": "原点を左下に合わせたので、矩形の左下XとYが0.00になる。",
     "marks": []
   },

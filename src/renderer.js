@@ -1,7 +1,7 @@
 import { paperDimensions, frameRect } from './papers.js';
 import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
-import { entitySegments, LINE_STYLES } from './model.js';
+import { entitySegments, dashArrayMm } from './model.js';
 import {
   dimLayout, DIM_ARROW_MM, balloonLayout, annotationLayout,
 } from './dims.js';
@@ -26,6 +26,7 @@ const COLORS = {
   origin: '#cc4400',
   selectBox: '#0b6bcb',
   snapHint: '#d63384',
+  reference: '#e8590c', // 選択した図形の座標の基準点
 };
 
 function realToScreen(p, doc, view) {
@@ -56,6 +57,7 @@ export function draw(ctx, state) {
   drawTitleBlock(ctx, doc, view);
   drawEntities(ctx, doc, view, state, k);
   drawOrigin(ctx, doc, view);
+  if (state.referencePoint) drawReferencePoint(ctx, doc, view, state.referencePoint);
   if (draft) drawDraft(ctx, doc, view, draft);
   if (state.copyDrag) drawCopyGhost(ctx, doc, view, state.copyDrag);
   if (state.midGuides?.length) drawMidGuides(ctx, doc, view, state.midGuides);
@@ -316,7 +318,6 @@ function drawEntities(ctx, doc, view, state, k) {
   const visible = new Map(doc.layers.map((l) => [l.id, l.visible]));
   for (const e of doc.entities) {
     if (visible.get(e.layer) === false) continue;
-    const style = LINE_STYLES[e.lineType] ?? LINE_STYLES.solid;
     const isSelected = selection.has(e.id);
     // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)。太さは要素ごとの指定を優先
     const width = Math.max(1, strokeWidthMm(e) * view.pxPerMm);
@@ -325,7 +326,8 @@ function drawEntities(ctx, doc, view, state, k) {
       || (state.hoverGroup != null && e.group === state.hoverGroup));
     ctx.strokeStyle = isSelected ? COLORS.selected : isHover ? COLORS.hover : COLORS.entity;
     ctx.lineWidth = isSelected ? width + 2 : isHover ? width + 1.5 : width;
-    ctx.setLineDash(style.dashMm.map((mm) => Math.max(1.5, mm * view.pxPerMm)));
+    // 破線の間隔は図面ごとの設定(用紙上mm)
+    ctx.setLineDash(dashArrayMm(e.lineType, doc.dashPatterns).map((mm) => Math.max(1.5, mm * view.pxPerMm)));
     strokeEntity(ctx, doc, view, e, k);
     // 連続線/スプラインのセグメント選択の強調表示
     if (isSelected && subSel != null && selection.size === 1
@@ -347,6 +349,32 @@ function drawEntities(ctx, doc, view, state, k) {
     }
   }
   ctx.setLineDash([]);
+}
+
+// 図形を1つ選んだとき、数値欄の X・Y がどの点かを示す印(オレンジの◎と名前)
+function drawReferencePoint(ctx, doc, view, ref) {
+  const s = realToScreen(ref, doc, view);
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = COLORS.reference;
+  ctx.fillStyle = COLORS.reference;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  // 名前は白い縁取りで、線と重なっても読めるようにする
+  const text = `${ref.label}(X・Yの基準)`;
+  ctx.font = 'bold 12px "Yu Gothic UI", "Meiryo", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#ffffff';
+  ctx.strokeText(text, s.x + 9, s.y - 6);
+  ctx.fillText(text, s.x + 9, s.y - 6);
+  ctx.restore();
 }
 
 function drawSnapHint(ctx, doc, view, hint) {

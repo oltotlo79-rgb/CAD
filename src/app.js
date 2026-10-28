@@ -7,8 +7,10 @@ import {
   duplicateEntities, parseScale, formatScale,
   rotateEntities, scaleEntities, entityBounds, hitTestEntity, STYLE_PRESETS,
   polySegmentCount, polySegmentInfo, setPolySegment, nearestPolySegment,
-  entitySegments, isEntityVisible, parseNumber,
+  entitySegments, isEntityVisible, parseNumber, referencePoint,
+  DEFAULT_DASH_PATTERNS, copyDashPatterns, parseDashValue, dashArrayMm,
 } from './model.js';
+import { followEdits } from './follow.js';
 import { findSnap } from './snap.js';
 import {
   dimText, DIM_TEXT_MM, dimTextHit, dimShiftAt, fmtMm,
@@ -250,6 +252,9 @@ function dimPlacement(p1, p2, c, aligned) {
 // ---- 描画・状態表示 ----
 function render() {
   state.guides = currentGuides();
+  // 図形を1つ選んで数値欄に値が出ているときは、X・Yがどの点かを図の上に示す
+  const editing = state.tool === 'select' ? selectedEditable() : null;
+  state.referencePoint = editing ? referencePoint(editing, state.subSel) : null;
   draw(ctx, state);
   updateStatus();
   syncNumPanel();
@@ -261,6 +266,9 @@ function render() {
 // ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
 let lastPanelKey = null;
 let cancelPanelEdit = false; // Esc で欄を離れる時は、打ちかけの値を図形に反映しない
+// 欄を作り直している間か。入力中の欄を消すとブラウザが change を出すので、
+// それを反映すると Enter 1回で2回変更したことになり、元に戻すが2回必要になる
+let rebuildingPanel = false;
 const PANEL_EDITABLE = ['line', 'circle', 'arc', 'rect', 'ellipse', 'polyline', 'spline', 'text'];
 function selectedEditable() {
   if (state.selection.size !== 1) return null;
@@ -293,7 +301,9 @@ function polygonModeSelect() {
 }
 function buildFields(defs) {
   const wrap = el('np-fields');
+  rebuildingPanel = true;
   wrap.innerHTML = '';
+  rebuildingPanel = false;
   for (const d of defs) {
     const label = document.createElement('label');
     const cap = d.caption ? d.caption() : document.createElement('span');
@@ -302,6 +312,13 @@ function buildFields(defs) {
     input.id = d.id;
     input.size = 7;
     input.value = d.value ?? '';
+    if (d.id === 'np-x') {
+      // 選んだ図形の X・Y は、図の上のオレンジの◎(基準点)の座標
+      const mark = Object.assign(document.createElement('span'), {
+        className: 'ref-mark', textContent: '◎', title: '図の上のオレンジの◎の点の座標',
+      });
+      label.append(mark);
+    }
     label.append(cap, input);
     wrap.append(label);
   }
@@ -431,10 +448,13 @@ function discardBackup() {
   clearTimeout(backupTimer);
   clearBackup().catch(() => {});
 }
-// 変更前スナップショットを積んでから mutator を実行する
-function commit(mutator) {
-  pushSnapshot(state.history, snapshot(state.doc));
+// 変更前スナップショットを積んでから mutator を実行する。
+// 図形の形を変えたら、くっついている寸法・引出線・中心線なども付いていく(follow:false で止める)
+function commit(mutator, { follow = true } = {}) {
+  const before = snapshot(state.doc);
+  pushSnapshot(state.history, before);
   mutator();
+  if (follow) followEdits(JSON.parse(before).entities, state.doc);
   markDirty();
   lastPanelKey = null; // 数値パネルを最新値で再同期
   render();
@@ -1052,11 +1072,12 @@ function handleToolPointerDown(s, ev) {
           if (state.tool === 'fillet') {
             const f = filletLines(first.line, first.click, hit, screenToReal(s), r);
             if (f) {
+              // 角の寸法は、丸めた後も元の角(仮想の交点)を測るのが図面の決まりなので追従させない
               commit(() => {
                 Object.assign(first.line, f.l1);
                 Object.assign(hit, f.l2);
                 addEntity(state.doc, { type: 'arc', ...f.arc, ...style });
-              });
+              }, { follow: false });
             } else {
               showMessage('フィレット: 平行な直線同士には適用できません');
             }
@@ -1067,7 +1088,7 @@ function handleToolPointerDown(s, ev) {
                 Object.assign(first.line, c.l1);
                 Object.assign(hit, c.l2);
                 addEntity(state.doc, { type: 'line', ...c.line, ...style });
-              });
+              }, { follow: false });
             } else {
               showMessage('面取り: 平行な直線同士には適用できません');
             }
@@ -1277,7 +1298,11 @@ function handleToolPointerMove(s) {
         state.moveDrag.snapshotPushed = true;
         markDirty();
       }
+      // 動かした図形に付いている寸法なども付いていく。寸法・引出線だけを動かしたときは、
+      // 図形に付いた点を残して寸法線・文字の位置だけが動く
+      const before = structuredClone(state.doc.entities);
       translateEntities(state.doc, [...state.selection], dx, dy);
+      followEdits(before, state.doc, { ownMove: true });
       state.moveDrag.lastReal = p;
     }
     return;
@@ -1791,7 +1816,7 @@ el('np-fields').addEventListener('change', (ev) => {
     render();
     return;
   }
-  if (cancelPanelEdit) return;
+  if (cancelPanelEdit || rebuildingPanel) return;
   if (state.tool === 'select' && selectedEditable()) applyNumPanel();
 });
 
@@ -2146,6 +2171,75 @@ function handleEscape() {
   }
 }
 
+// ---- 線種の間隔(破線・一点鎖線・二点鎖線の線の長さと隙間。図面ごと・用紙上mm) ----
+const DASH_ROWS = [
+  ['dashed', 'かくれ線（破線）'],
+  ['chain', '中心線（一点鎖線）'],
+  ['chain2', '想像線（二点鎖線）'],
+];
+const DASH_FIELDS = [['dash', '線の長さ'], ['gap', '隙間'], ['dot', '短い線']];
+// 見本: 実際の並びを、紙の上の1mm=3pxで描く
+function dashSample(type) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '96');
+  svg.setAttribute('height', '12');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  for (const [k, v] of Object.entries({ x1: 4, y1: 6, x2: 92, y2: 6, stroke: '#111', 'stroke-width': 1.5 })) {
+    line.setAttribute(k, v);
+  }
+  line.setAttribute('stroke-dasharray', dashArrayMm(type, state.doc.dashPatterns).map((mm) => mm * 3).join(' '));
+  svg.append(line);
+  return svg;
+}
+function buildDashPanel() {
+  const list = el('dash-list');
+  list.replaceChildren();
+  const span = (text, className = '') => Object.assign(document.createElement('span'), { textContent: text, className });
+  list.append(span('線種', 'head'), ...DASH_FIELDS.map(([, label]) => span(`${label}(mm)`, 'head')), span('見本', 'head'));
+  for (const [type, name] of DASH_ROWS) {
+    const sample = dashSample(type);
+    list.append(span(name));
+    for (const [key, label] of DASH_FIELDS) {
+      if (state.doc.dashPatterns[type][key] == null) {
+        list.append(span('')); // 破線には短い線がない
+        continue;
+      }
+      const input = document.createElement('input');
+      input.id = `dash-${type}-${key}`;
+      input.title = `${name}の${label}（印刷した紙の上でのmm）`;
+      input.value = String(state.doc.dashPatterns[type][key]);
+      input.addEventListener('change', () => {
+        const v = cancelPanelEdit ? null : parseDashValue(input.value);
+        if (v == null) {
+          if (!cancelPanelEdit) showMessage('線種の間隔: 0より大きく50以下の数(mm)を入れてください');
+          input.value = String(state.doc.dashPatterns[type][key]);
+          return;
+        }
+        state.doc.dashPatterns[type][key] = v;
+        input.value = String(v);
+        // 見本だけ描き直す(欄を作り直すと、Tabで移った先の欄から入力位置が外れるため)
+        sample.firstChild.setAttribute('stroke-dasharray',
+          dashArrayMm(type, state.doc.dashPatterns).map((mm) => mm * 3).join(' '));
+        markDirty();
+        render();
+      });
+      list.append(input);
+    }
+    list.append(sample);
+  }
+  const foot = document.createElement('div');
+  foot.className = 'dash-foot';
+  const reset = Object.assign(document.createElement('button'), { textContent: '標準に戻す', id: 'dash-reset' });
+  reset.addEventListener('click', () => {
+    state.doc.dashPatterns = copyDashPatterns(DEFAULT_DASH_PATTERNS);
+    buildDashPanel();
+    markDirty();
+    render();
+  });
+  foot.append(span('数字は印刷した紙の上の長さ(mm)。この図面に保存されます'), reset);
+  list.append(foot);
+}
+
 // ---- レイヤーパネル ----
 function buildLayerPanel() {
   const list = el('layer-list');
@@ -2220,6 +2314,7 @@ function loadDocText(text, name) {
     discardBackup();
     syncSettingsUI();
     buildLayerPanel();
+    buildDashPanel();
     refitView();
     updateTitle();
     render();
@@ -2257,6 +2352,7 @@ el('file-new').addEventListener('click', () => {
   state.dirty = false;
   syncSettingsUI();
   buildLayerPanel();
+  buildDashPanel();
   refitView();
   updateTitle();
   render();
@@ -2418,6 +2514,7 @@ el('show-guide').checked = state.showGuide;
 resizeCanvas();
 syncSettingsUI();
 buildLayerPanel();
+buildDashPanel();
 updateTitle();
 
 // クラッシュ後の復元確認(非モーダルのバナーで提示)

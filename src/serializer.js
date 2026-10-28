@@ -1,4 +1,4 @@
-import { createDocument } from './model.js';
+import { createDocument, copyDashPatterns } from './model.js';
 
 export function serialize(doc) {
   return JSON.stringify(doc, null, 2);
@@ -25,6 +25,8 @@ export function deserialize(text) {
     userOrigin: { ...base.userOrigin, ...data.userOrigin },
     grid: { ...base.grid, ...data.grid },
     layers: Array.isArray(data.layers) ? data.layers : base.layers,
+    // 線種の間隔は、古いファイル・書かれていない所を標準の値で補う
+    dashPatterns: copyDashPatterns(data.dashPatterns),
     mirror45: data.mirror45 ?? null,
     titleBlock: data.titleBlock !== undefined ? data.titleBlock : base.titleBlock,
     entities,

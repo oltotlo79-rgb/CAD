@@ -36,8 +36,20 @@ button.tool.active { background: #0b6bcb; border-color: #0b6bcb; color: #fff; }
 #toolbar label { display: inline-flex; gap: 3px; align-items: center; }
 select, input { background: #23262b; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 2px 4px; }
 input:disabled, select:disabled { opacity: 0.4; }
-#layer-panel { position: relative; }
-#layer-panel summary { cursor: pointer; padding: 3px 8px; background: #3a3f46; border: 1px solid #555; border-radius: 3px; list-style: none; }
+#layer-panel, #dash-panel { position: relative; }
+#layer-panel summary, #dash-panel summary { cursor: pointer; padding: 3px 8px; background: #3a3f46; border: 1px solid #555; border-radius: 3px; list-style: none; }
+/* 線種の間隔: 線種ごとに 線の長さ・隙間・短い線(mm)と見本 */
+#dash-list {
+  position: absolute; right: 0; top: 100%; z-index: 20; width: max-content; white-space: nowrap;
+  background: #23262b; border: 1px solid #555; border-radius: 3px; padding: 8px 10px;
+  display: grid; grid-template-columns: auto auto auto auto auto; gap: 6px 10px; align-items: center;
+}
+#dash-list .head { color: #889; font-size: 11px; }
+#dash-list input { width: 4.5em; }
+#dash-list svg { display: block; background: #fff; border-radius: 2px; }
+#dash-list .dash-foot { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; color: #9aa; font-size: 11px; }
+#dash-list .dash-foot button { margin-left: auto; }
+.ref-mark { color: #e8590c; font-weight: bold; }
 #layer-list {
   position: absolute; right: 0; top: 100%; z-index: 20; min-width: 200px;
   background: #23262b; border: 1px solid #555; border-radius: 3px; padding: 6px 10px;
@@ -72,6 +84,8 @@ input:disabled, select:disabled { opacity: 0.4; }
 }
 #np-fields { display: flex; gap: 8px; align-items: center; }
 #np-fields label { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+/* 題名・欄・ボタンは縮めず、狭いときは右の説明文だけが折り返す */
+#np-title, #np-fields, #num-draw { flex-shrink: 0; white-space: nowrap; }
 #numpanel .hint { color: #888; margin-left: auto; }
 #statusbar { padding: 4px 10px; background: #14161a; color: #9ab; font-family: Consolas, monospace; }
 

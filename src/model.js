@@ -11,14 +11,39 @@ import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
 import { bomLayout } from './bom.js';
 import { nextGroupId, renumberGroups } from './groups.js';
 
-// 線種ごとの描画スタイル。太さ・破線は用紙上mm(縮尺に依存しない)
+// 線種ごとの描画スタイル。太さは用紙上mm(縮尺に依存しない)。破線の間隔は図面ごとの dashPatterns
 export const LINE_STYLES = {
-  solid:  { widthMm: 0.5,  dashMm: [] },
-  dashed: { widthMm: 0.35, dashMm: [3, 1.5] },
-  chain:  { widthMm: 0.25, dashMm: [8, 1.5, 1.5, 1.5] },
-  chain2: { widthMm: 0.25, dashMm: [8, 1.5, 1.5, 1.5, 1.5, 1.5] },
-  thin:   { widthMm: 0.25, dashMm: [] },
+  solid:  { widthMm: 0.5 },
+  dashed: { widthMm: 0.35 },
+  chain:  { widthMm: 0.25 },
+  chain2: { widthMm: 0.25 },
+  thin:   { widthMm: 0.25 },
 };
+
+// 破線(かくれ線)・一点鎖線(中心線)・二点鎖線(想像線)の線の長さ・隙間・短い線の長さ(用紙上mm)。
+// 図面ごとに変えられ、画面・印刷・SVGに使う
+export const DEFAULT_DASH_PATTERNS = {
+  dashed: { dash: 3, gap: 1.5 },
+  chain: { dash: 8, gap: 1.5, dot: 1.5 },
+  chain2: { dash: 8, gap: 1.5, dot: 1.5 },
+};
+export function copyDashPatterns(patterns = DEFAULT_DASH_PATTERNS) {
+  return Object.fromEntries(Object.entries(DEFAULT_DASH_PATTERNS)
+    .map(([type, base]) => [type, { ...base, ...patterns?.[type] }]));
+}
+// 線種の破線の並び(用紙上mm)。実線は []
+export function dashArrayMm(lineType, patterns = DEFAULT_DASH_PATTERNS) {
+  const p = { ...DEFAULT_DASH_PATTERNS[lineType], ...patterns?.[lineType] };
+  if (lineType === 'dashed') return [p.dash, p.gap];
+  if (lineType === 'chain') return [p.dash, p.gap, p.dot, p.gap];
+  if (lineType === 'chain2') return [p.dash, p.gap, p.dot, p.gap, p.dot, p.gap];
+  return [];
+}
+// 間隔の入力値。0より大きく50mm以下なら数、それ以外は null
+export function parseDashValue(text) {
+  const v = parseNumber(text);
+  return v > 0 && v <= 50 ? v : null;
+}
 
 // 線種UIプリセット → lineType と配置レイヤー
 export const STYLE_PRESETS = {
@@ -57,6 +82,7 @@ export function createDocument({ paperSize = 'A4', orientation = 'landscape' } =
     mirror45: null, // 45°ミラー線の通過点 {x,y}(実寸mm)。nullなら未設定
     titleBlock: { fields: titleFields },
     layers: DEFAULT_LAYERS.map((l) => ({ ...l })),
+    dashPatterns: copyDashPatterns(),
     nextId: 1,
     entities: [],
   };
@@ -513,6 +539,24 @@ export function nearestPolySegment(e, p) {
     if (d < bestD) { bestD = d; best = i; }
   }
   return best;
+}
+
+// 図形を1つ選んだとき、数値欄の X・Y が図形のどの点か(画面に印と名前を出す)。
+// subSel は連続線・スプラインで選んだ線分の番号。数値欄を出さない図形は null
+export function referencePoint(e, subSel = null) {
+  if (e.type === 'line') return { x: e.x1, y: e.y1, label: '始点' };
+  if (e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse') return { x: e.cx, y: e.cy, label: '中心' };
+  if (e.type === 'rect') return { x: e.x, y: e.y, label: '左下' };
+  if (e.type === 'text') return { x: e.x, y: e.y, label: '位置' };
+  if (e.type === 'polyline' || e.type === 'spline') {
+    if (subSel != null && subSel < polySegmentCount(e)) {
+      const [x, y] = e.points[subSel];
+      return { x, y, label: `線分${subSel + 1}の始点` };
+    }
+    const [x, y] = e.points[0];
+    return { x, y, label: '始点' };
+  }
+  return null;
 }
 
 // オブジェクトスナップの候補点(端点・中点・中心・四半点)
