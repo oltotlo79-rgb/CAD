@@ -1,7 +1,7 @@
 // SVGエクスポート(一次出力形式)。用紙実寸mmで出力する。
 // 印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
 import { paperDimensions, frameRect } from './papers.js';
-import { LINE_STYLES, entitySegments, ellipsePoint, isEllipseArc } from './model.js';
+import { dashArrayMm, entitySegments, ellipsePoint, isEllipseArc } from './model.js';
 import { DIM_ARROW_MM, balloonLayout, annotationLayout } from './dims.js';
 import { strokeWidthMm } from './entityStyle.js';
 import { catmullRomPoints } from './geometry.js';
@@ -60,30 +60,31 @@ export function toSVG(doc) {
   return out.filter(Boolean).join('\n');
 }
 
-function strokeAttrs(e) {
-  const style = LINE_STYLES[e.lineType] ?? LINE_STYLES.solid;
-  const dash = style.dashMm.length > 0 ? ` stroke-dasharray="${style.dashMm.join(' ')}"` : '';
+function strokeAttrs(e, doc) {
+  // 破線の間隔は図面ごとの設定(用紙上mm)
+  const dashMm = dashArrayMm(e.lineType, doc.dashPatterns);
+  const dash = dashMm.length > 0 ? ` stroke-dasharray="${dashMm.join(' ')}"` : '';
   return `stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"${dash}`;
 }
 
 function entityToSVG(e, doc, k, X, Y) {
   if (e.type === 'line') {
-    return `<line x1="${X(e.x1)}" y1="${Y(e.y1)}" x2="${X(e.x2)}" y2="${Y(e.y2)}" ${strokeAttrs(e)}/>`;
+    return `<line x1="${X(e.x1)}" y1="${Y(e.y1)}" x2="${X(e.x2)}" y2="${Y(e.y2)}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'rect') {
     if (e.rotation) {
       const pts = entitySegments(e).map(([a]) => `${X(a.x)},${Y(a.y)}`).join(' ');
-      return `<polygon points="${pts}" ${strokeAttrs(e)}/>`;
+      return `<polygon points="${pts}" ${strokeAttrs(e, doc)}/>`;
     }
-    return `<rect x="${X(e.x)}" y="${Y(e.y + e.height)}" width="${r2(e.width * k)}" height="${r2(e.height * k)}" ${strokeAttrs(e)}/>`;
+    return `<rect x="${X(e.x)}" y="${Y(e.y + e.height)}" width="${r2(e.width * k)}" height="${r2(e.height * k)}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'polyline') {
     const pts = e.points.map(([x, y]) => `${X(x)},${Y(y)}`).join(' ');
     const tag = e.closed ? 'polygon' : 'polyline';
-    return `<${tag} points="${pts}" ${strokeAttrs(e)}/>`;
+    return `<${tag} points="${pts}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'circle') {
-    return `<circle cx="${X(e.cx)}" cy="${Y(e.cy)}" r="${r2(e.r * k)}" ${strokeAttrs(e)}/>`;
+    return `<circle cx="${X(e.cx)}" cy="${Y(e.cy)}" r="${r2(e.r * k)}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'ellipse') {
     const rot = e.rotation ?? 0;
@@ -93,10 +94,10 @@ function entityToSVG(e, doc, k, X, Y) {
       let sweep = e.endAngle - e.startAngle;
       while (sweep < 0) sweep += 360;
       const large = sweep > 180 ? 1 : 0;
-      return `<path d="M ${X(a.x)} ${Y(a.y)} A ${r2(e.rx * k)} ${r2(e.ry * k)} ${r2(-rot)} ${large} 0 ${X(b.x)} ${Y(b.y)}" ${strokeAttrs(e)}/>`;
+      return `<path d="M ${X(a.x)} ${Y(a.y)} A ${r2(e.rx * k)} ${r2(e.ry * k)} ${r2(-rot)} ${large} 0 ${X(b.x)} ${Y(b.y)}" ${strokeAttrs(e, doc)}/>`;
     }
     const tr = rot ? ` transform="rotate(${r2(-rot)} ${X(e.cx)} ${Y(e.cy)})"` : '';
-    return `<ellipse cx="${X(e.cx)}" cy="${Y(e.cy)}" rx="${r2(e.rx * k)}" ry="${r2(e.ry * k)}" ${strokeAttrs(e)}${tr}/>`;
+    return `<ellipse cx="${X(e.cx)}" cy="${Y(e.cy)}" rx="${r2(e.rx * k)}" ry="${r2(e.ry * k)}" ${strokeAttrs(e, doc)}${tr}/>`;
   }
   if (e.type === 'arc') {
     let sweep = e.endAngle - e.startAngle;
@@ -108,7 +109,7 @@ function entityToSVG(e, doc, k, X, Y) {
     const rp = r2(e.r * k);
     const large = sweep > 180 ? 1 : 0;
     // 実座標で反時計回り → y反転後のSVGでは sweep-flag 0
-    return `<path d="M ${sx} ${sy} A ${rp} ${rp} 0 ${large} 0 ${ex} ${ey}" ${strokeAttrs(e)}/>`;
+    return `<path d="M ${sx} ${sy} A ${rp} ${rp} 0 ${large} 0 ${ex} ${ey}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'text') {
     const tr = e.rotation ? ` transform="rotate(${r2(-e.rotation)} ${X(e.x)} ${Y(e.y)})"` : '';
@@ -140,7 +141,7 @@ function entityToSVG(e, doc, k, X, Y) {
   if (e.type === 'spline') {
     const pts = catmullRomPoints(e.points, e.closed)
       .map((p) => `${X(p.x)},${Y(p.y)}`).join(' ');
-    return `<polyline points="${pts}" ${strokeAttrs(e)}/>`;
+    return `<polyline points="${pts}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'dim' || e.type === 'leader' || e.type === 'roughness' || e.type === 'fcf') {
     return svgDimParts(annotationLayout(e, k), k, X, Y, strokeWidthMm(e));
