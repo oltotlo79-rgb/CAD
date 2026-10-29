@@ -67,3 +67,14 @@ export function renumberGroups(items, firstFreeId) {
     item.group = map.get(item.group);
   }
 }
+
+// 選んだ図形(ids)を1つのまとまりにする。すでにまとまりに入っている図形は、その仲間ごと合わさる。
+// まとめる図形が2つ未満(1つだけ・同じまとまりの中だけ)なら何もせず null、まとめたら新しい番号
+export function groupEntities(entities, ids) {
+  const members = withGroupMembers(entities, ids);
+  const groups = new Set(entities.filter((e) => members.has(e.id)).map((e) => e.group ?? `id${e.id}`));
+  if (members.size < 2 || groups.size < 2) return null;
+  const gid = nextGroupId(entities);
+  for (const e of entities) if (members.has(e.id)) e.group = gid;
+  return gid;
+}

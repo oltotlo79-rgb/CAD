@@ -150,3 +150,16 @@ export function polygonCentroid(points) {
   }
   return { x: round6(cx / (3 * a2)) || 0, y: round6(cy / (3 * a2)) || 0 };
 }
+
+// Shift を押しているときの向きの固定: 基準点 from から p への向きを stepDeg 刻み
+// (既定45°=水平・垂直・斜め45°)にそろえ、長さはその向きへの投影にする
+export function constrainAngle(from, p, stepDeg = 45) {
+  const dx = p.x - from.x;
+  const dy = p.y - from.y;
+  if (dx === 0 && dy === 0) return { x: p.x, y: p.y };
+  const a = Math.round(Math.atan2(dy, dx) / DEG / stepDeg) * stepDeg * DEG;
+  const ux = Math.cos(a);
+  const uy = Math.sin(a);
+  const len = dx * ux + dy * uy;
+  return { x: round6(from.x + ux * len) || 0, y: round6(from.y + uy * len) || 0 };
+}

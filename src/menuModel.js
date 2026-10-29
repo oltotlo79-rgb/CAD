@@ -55,6 +55,11 @@ export function buildContextMenu({
   if (entities.some((e) => e.type === 'rect' || e.type === 'polyline' || e.group != null)) {
     items.push({ id: 'explode', label: '分解（バラバラにする）' });
   }
+  // 2つ以上の図形(まだ1つのまとまりになっていないもの)は、1つにまとめられる
+  const groupKeys = new Set(entities.map((e, i) => e.group ?? `single${i}`));
+  if (entities.length >= 2 && groupKeys.size >= 2) {
+    items.push({ id: 'group', label: 'グループ化（1つにまとめる）' });
+  }
 
   const styles = [];
   const withLineType = entities.filter(hasLineType);
@@ -89,6 +94,16 @@ export function buildContextMenu({
   if (styles.length > 0) items.push(SEP, ...styles);
 
   const extra = [];
+  // 長さ寸法は、後から 水平・垂直・平行(斜め) を切り替えられる
+  const linearDims = entities.filter((e) => e.type === 'dim' && e.dimType === 'linear');
+  if (linearDims.length > 0) {
+    const cur = commonValue(linearDims, (e) => e.orient);
+    extra.push({
+      id: 'dimOrient', label: '寸法の向き',
+      children: [['h', '水平に測る'], ['v', '垂直に測る'], ['aligned', '斜め（2点を結ぶ線に平行）に測る']]
+        .map(([o, label]) => ({ id: `dimOrient:${o}`, label, checked: isCurrent(cur, o) })),
+    });
+  }
   if (entities.length === 1 && EDITABLE_TEXT.includes(entities[0].type)) {
     extra.push({ id: 'editText', label: '値・文字を書き換える' });
   }

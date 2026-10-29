@@ -57,6 +57,7 @@ export function draw(ctx, state) {
   drawTitleBlock(ctx, doc, view);
   drawEntities(ctx, doc, view, state, k);
   drawOrigin(ctx, doc, view);
+  if (state.grips?.length) drawGrips(ctx, doc, view, state.grips, state.hoverGrip, state.gripDrag);
   if (state.referencePoint) drawReferencePoint(ctx, doc, view, state.referencePoint);
   if (draft) drawDraft(ctx, doc, view, draft);
   if (state.copyDrag) drawCopyGhost(ctx, doc, view, state.copyDrag);
@@ -349,6 +350,25 @@ function drawEntities(ctx, doc, view, state, k) {
     }
   }
   ctx.setLineDash([]);
+}
+
+// 選んだ図形のつまみ(小さな四角)。マウスを乗せた・つまんでいるつまみはオレンジ
+function drawGrips(ctx, doc, view, grips, hover, drag) {
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1.5;
+  for (const g of grips) {
+    const s = realToScreen(g, doc, view);
+    const active = (hover && hover.id === g.id && hover.key === g.key)
+      || (drag && drag.id === g.id && drag.key === g.key);
+    ctx.fillStyle = active ? COLORS.reference : COLORS.selected;
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.rect(s.x - 4.5, s.y - 4.5, 9, 9);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 // 図形を1つ選んだとき、数値欄の X・Y がどの点かを示す印(オレンジの◎と名前)

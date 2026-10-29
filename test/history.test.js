@@ -56,3 +56,24 @@ test('applySnapshot は userOrigin と nextId も復元する', () => {
   assert.deepEqual(doc.userOrigin, { x: 10, y: 10 });
   assert.equal(doc.nextId, 1);
 });
+
+test('設定(レイヤー・用紙・縮尺・方眼・表題欄・線種の間隔・45°線)も元に戻せる', () => {
+  const doc = createDocument();
+  const before = snapshot(doc);
+  doc.layers.find((l) => l.id === 'center').visible = false;
+  doc.paper = { size: 'A3', orientation: 'portrait' };
+  doc.scale.ratio = [1, 2];
+  doc.grid = { mode: 'manual', manualMm: 5 };
+  doc.titleBlock.fields[0].value = '図番1';
+  doc.dashPatterns.chain.dash = 12;
+  doc.mirror45 = { x: 1, y: 2 };
+  applySnapshot(doc, before);
+  const fresh = createDocument();
+  assert.equal(doc.layers.find((l) => l.id === 'center').visible, true);
+  assert.deepEqual(doc.paper, fresh.paper);
+  assert.deepEqual(doc.scale.ratio, [1, 1]);
+  assert.deepEqual(doc.grid, fresh.grid);
+  assert.equal(doc.titleBlock.fields[0].value, fresh.titleBlock.fields[0].value);
+  assert.equal(doc.dashPatterns.chain.dash, 8);
+  assert.equal(doc.mirror45, null);
+});

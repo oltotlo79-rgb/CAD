@@ -58,10 +58,12 @@ function intersectionsBetween(e1, e2) {
 // p の近傍(tolMm以内)で最も近いスナップ点を返す
 // 戻り値: { x, y, kind } | null。kind: end/mid/center/quad/intersection
 // options.perimeterStepDeg: 円・円弧の円周の点を、上下左右に加えてこの角度ごとにも出す(引出線の矢印の先)
+// options.exclude: 吸着の相手にしない図形のid(つまみで形を変えている図形)
 export function findSnap(doc, p, tolMm, k = 1, options = {}) {
   const near = [];
   // 見えていない図形(非表示レイヤー)には吸着しない
-  const candidates = doc.entities.filter((e) => isEntityVisible(doc, e) && nearBounds(e, p, tolMm, k));
+  const candidates = doc.entities.filter((e) => e.id !== options.exclude
+    && isEntityVisible(doc, e) && nearBounds(e, p, tolMm, k));
   for (const e of candidates) {
     const extra = options.perimeterStepDeg ? perimeterPoints(e, options.perimeterStepDeg) : [];
     for (const sp of [...entitySnapPoints(e), ...extra]) {

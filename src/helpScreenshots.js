@@ -87,7 +87,7 @@ export const HELP_SCREENSHOTS = {
   },
   "tab-edit": {
     "src": "help/screenshots/tab-edit.png",
-    "width": 1171,
+    "width": 1264,
     "height": 52,
     "caption": "「編集」タブの実際のボタン。",
     "marks": []
@@ -130,8 +130,8 @@ export const HELP_SCREENSHOTS = {
   },
   "move-after": {
     "src": "help/screenshots/move-after.png",
-    "width": 650,
-    "height": 330,
+    "width": 760,
+    "height": 440,
     "caption": "矩形の輪郭をドラッグして右上へ25mm移動した結果。",
     "marks": []
   },
@@ -165,7 +165,7 @@ export const HELP_SCREENSHOTS = {
   },
   "line-draft": {
     "src": "help/screenshots/line-draft.png",
-    "width": 876,
+    "width": 966,
     "height": 330,
     "caption": "始点①をクリックして終点②へマウスを動かした途中。緑の破線と実際の操作ガイド。",
     "marks": [
@@ -202,6 +202,21 @@ export const HELP_SCREENSHOTS = {
         "x": 525,
         "y": 85,
         "n": 2,
+        "dx": -20,
+        "dy": -24
+      }
+    ]
+  },
+  "line-shift": {
+    "src": "help/screenshots/line-shift.png",
+    "width": 780,
+    "height": 330,
+    "caption": "Shiftを押しながら動かすと、線の向きが水平・垂直・斜め45°にそろう（45°の例）。",
+    "marks": [
+      {
+        "x": 230,
+        "y": 285,
+        "n": 1,
         "dx": -20,
         "dy": -24
       }
@@ -244,7 +259,7 @@ export const HELP_SCREENSHOTS = {
   },
   "polyline-draft": {
     "src": "help/screenshots/polyline-draft.png",
-    "width": 871,
+    "width": 650,
     "height": 381,
     "caption": "①→②→③→④とクリックして、Enterで確定する。",
     "marks": [
@@ -711,7 +726,7 @@ export const HELP_SCREENSHOTS = {
   },
   "mirror-control": {
     "src": "help/screenshots/mirror-control.png",
-    "width": 243,
+    "width": 335,
     "height": 52,
     "caption": "選択した図形に「左右反転」「上下反転」を使う。",
     "marks": []
@@ -751,6 +766,20 @@ export const HELP_SCREENSHOTS = {
         "dy": -24
       }
     ]
+  },
+  "group-control": {
+    "src": "help/screenshots/group-control.png",
+    "width": 335,
+    "height": 52,
+    "caption": "円と四角を選んでから、「編集」タブの「グループ化」を押す。",
+    "marks": []
+  },
+  "group-hover": {
+    "src": "help/screenshots/group-hover.png",
+    "width": 700,
+    "height": 330,
+    "caption": "グループ化した後。円にマウスを乗せると、まとまり全体が水色になり、クリックすると両方が選ばれる。",
+    "marks": []
   },
   "trim-before": {
     "src": "help/screenshots/trim-before.png",
@@ -830,6 +859,28 @@ export const HELP_SCREENSHOTS = {
     "width": 650,
     "height": 330,
     "caption": "元の直線を残して、10mm上に平行な直線を作った結果。",
+    "marks": []
+  },
+  "grip-before": {
+    "src": "help/screenshots/grip-before.png",
+    "width": 820,
+    "height": 420,
+    "caption": "四角を選ぶと、角と辺の真ん中に青い四角（つまみ）が出る。①右上の角のつまみを押して動かす。",
+    "marks": [
+      {
+        "x": 570,
+        "y": 110,
+        "n": 1,
+        "dx": 28,
+        "dy": -28
+      }
+    ]
+  },
+  "grip-after": {
+    "src": "help/screenshots/grip-after.png",
+    "width": 820,
+    "height": 420,
+    "caption": "右上の角を右上へ動かした結果。左下の角はそのままで大きさが変わり、下の寸法も120に付いてくる。",
     "marks": []
   },
   "fillet-control": {
@@ -947,6 +998,42 @@ export const HELP_SCREENSHOTS = {
     "caption": "3回目のクリックでShiftを押すと、斜めの直線に平行な寸法になる。",
     "marks": []
   },
+  "dim-grips": {
+    "src": "help/screenshots/dim-grips.png",
+    "width": 760,
+    "height": 400,
+    "caption": "寸法を選ぶと、補助線の根元（①測る点）と寸法線の両端（②）に青い四角が出る。押したまま動かして直す。",
+    "marks": [
+      {
+        "x": 220,
+        "y": 272,
+        "n": 1,
+        "dx": -28,
+        "dy": -26
+      },
+      {
+        "x": 220,
+        "y": 332,
+        "n": 2,
+        "dx": -28,
+        "dy": 26
+      }
+    ]
+  },
+  "dim-panel": {
+    "src": "help/screenshots/dim-panel.png",
+    "width": 1280,
+    "height": 39,
+    "caption": "寸法を1つ選んだときの数値入力。「向き」と「寸法線までの離れ」を後から直せる。",
+    "marks": []
+  },
+  "dim-aligned": {
+    "src": "help/screenshots/dim-aligned.png",
+    "width": 760,
+    "height": 430,
+    "caption": "向きを「平行（斜め）」にした結果。斜めの線に沿った長さ（94.34）を測る。",
+    "marks": []
+  },
   "dimension-text-before": {
     "src": "help/screenshots/dimension-text-before.png",
     "width": 820,
@@ -964,7 +1051,7 @@ export const HELP_SCREENSHOTS = {
   "dimension-text-menu": {
     "src": "help/screenshots/dimension-text-menu.png",
     "width": 264,
-    "height": 467,
+    "height": 494,
     "caption": "右クリックの「寸法の値を中央に戻す」で位置を戻せる。",
     "marks": []
   },
@@ -1366,7 +1453,7 @@ export const HELP_SCREENSHOTS = {
   },
   "grid-draft": {
     "src": "help/screenshots/grid-draft.png",
-    "width": 882,
+    "width": 972,
     "height": 330,
     "caption": "方眼5mmに吸着した始点。画面下の状態表示でも手動5mmを確認できる。",
     "marks": []

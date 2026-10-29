@@ -320,3 +320,65 @@ export function dimLayout(e, k = 1) {
 
   return { lines, arrows, texts, textMm };
 }
+
+// ---- 長さ寸法の寸法線の位置と向き(後から直す) ----
+const EPS = 1e-9;
+const r6 = (v) => Math.round(v * 1e6) / 1e6 || 0;
+function dimNormal(e) {
+  const len = Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1]) || 1;
+  return { x: -(e.p2[1] - e.p1[1]) / len, y: (e.p2[0] - e.p1[0]) / len };
+}
+// 寸法線の真ん中の位置
+function dimLineMid(e) {
+  const mx = (e.p1[0] + e.p2[0]) / 2;
+  const my = (e.p1[1] + e.p2[1]) / 2;
+  if (e.orient === 'h') return { x: mx, y: e.offset };
+  if (e.orient === 'v') return { x: e.offset, y: my };
+  const n = dimNormal(e);
+  return { x: mx + n.x * e.offset, y: my + n.y * e.offset };
+}
+
+// 測る点から寸法線までの離れ(mm)。水平・垂直は寸法線のある側の近いほうの点から
+export function dimLineGap(e) {
+  if (e.orient === 'aligned') return Math.abs(e.offset);
+  const i = e.orient === 'h' ? 1 : 0;
+  const a = e.p1[i];
+  const b = e.p2[i];
+  return e.offset >= (a + b) / 2 ? r6(e.offset - Math.max(a, b)) : r6(Math.min(a, b) - e.offset);
+}
+
+// 寸法線までの離れを d(mm)にする。寸法線のある側は変えない
+export function setDimLineGap(e, d) {
+  if (e.orient === 'aligned') {
+    e.offset = r6((e.offset < 0 ? -1 : 1) * d);
+    return;
+  }
+  const i = e.orient === 'h' ? 1 : 0;
+  const a = e.p1[i];
+  const b = e.p2[i];
+  e.offset = e.offset >= (a + b) / 2 ? r6(Math.max(a, b) + d) : r6(Math.min(a, b) - d);
+}
+
+// 向きを 'h'(水平)・'v'(垂直)・'aligned'(2点を結ぶ線に平行)に変える。
+// 寸法線は今と同じ側に、同じ離れ(重なっていたら10mm)で置く。その向きで長さが0なら変えずに false
+export function setDimOrientation(e, orient) {
+  const [x1, y1] = e.p1;
+  const [x2, y2] = e.p2;
+  if (orient === 'h' && Math.abs(x2 - x1) < EPS) return false;
+  if (orient === 'v' && Math.abs(y2 - y1) < EPS) return false;
+  if (orient === 'aligned' && Math.hypot(x2 - x1, y2 - y1) < EPS) return false;
+  if (orient === e.orient) return true;
+  const m = dimLineMid(e);
+  const gap = dimLineGap(e);
+  const d = gap > 0 ? gap : 10;
+  const mid = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+  if (orient === 'h') e.offset = m.y >= mid.y ? r6(Math.max(y1, y2) + d) : r6(Math.min(y1, y2) - d);
+  else if (orient === 'v') e.offset = m.x >= mid.x ? r6(Math.max(x1, x2) + d) : r6(Math.min(x1, x2) - d);
+  else {
+    const n = dimNormal(e);
+    e.offset = r6(((m.x - mid.x) * n.x + (m.y - mid.y) * n.y < 0 ? -1 : 1) * d);
+  }
+  e.orient = orient;
+  delete e.textShift;
+  return true;
+}

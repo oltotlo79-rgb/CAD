@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   round6, distance, angleDegOf, lineEndPoint, snapToGrid, distancePointToSegment,
-  rotate90Point, segSegIntersection, segCircleIntersections, polygonCentroid,
+  rotate90Point, segSegIntersection, segCircleIntersections, polygonCentroid, constrainAngle,
 } from '../src/geometry.js';
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} !~ ${b}`);
@@ -75,4 +75,21 @@ test('polygonCentroid: 多角形の図心(面積の重心)。面積がなけれ�
   near(l.x, 25 / 3, 1e-6); // 座標は小数6桁に丸める
   near(l.y, 25 / 3, 1e-6);
   assert.deepEqual(polygonCentroid([[0, 0], [5, 0], [10, 0]]), { x: 5, y: 0 });
+});
+
+test('constrainAngle: Shift用。基準点からの向きを45°刻み(水平・垂直・斜め45°)にそろえる', () => {
+  const o = { x: 10, y: 10 };
+  // ほぼ水平 → 水平(長さはその向きへの投影)
+  assert.deepEqual(constrainAngle(o, { x: 30, y: 12 }), { x: 30, y: 10 });
+  // ほぼ垂直 → 垂直
+  assert.deepEqual(constrainAngle(o, { x: 11, y: -20 }), { x: 10, y: -20 });
+  // 斜め45°に近い → 45°の線の上
+  const d = constrainAngle(o, { x: 21, y: 19 });
+  near(d.x - 10, d.y - 10, 1e-6);
+  near(d.x - 10, 10, 1e-6);
+  // 左上135°も
+  const e = constrainAngle(o, { x: 0, y: 19.5 });
+  near(e.y - 10, -(e.x - 10), 1e-6);
+  // 同じ点ならそのまま
+  assert.deepEqual(constrainAngle(o, { x: 10, y: 10 }), { x: 10, y: 10 });
 });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   fmtMm, dimText, dimLayout, annoTextMm, balloonLayout, roughnessLayout, fcfLayout,
   annotationLayout, DIM_TEXT_MM, dimAxis, dimShiftAt, dimTextHit,
+  dimLineGap, setDimLineGap, setDimOrientation,
 } from '../src/dims.js';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -177,4 +178,41 @@ test('粗さ記号・公差枠: 文字高さに比例して記号も大きくな
   const rowH = (l) => l.lines[0][1].y - l.lines[0][0].y; // 左端の縦線の長さ = 行高さ
   assert.equal(rowH(fcfLayout(fcf, 1)), 7);
   assert.equal(rowH(fcfLayout({ ...fcf, textMm: 7 }, 1)), 14);
+});
+
+test('dimLineGap / setDimLineGap: 測る点から寸法線までの離れを読み書きする(寸法線のある側を保つ)', () => {
+  const below = { type: 'dim', dimType: 'linear', orient: 'h', p1: [0, 0], p2: [50, 10], offset: -15 };
+  assert.equal(dimLineGap(below), 15);
+  setDimLineGap(below, 8);
+  assert.equal(below.offset, -8);
+  const above = { ...below, offset: 25 };
+  assert.equal(dimLineGap(above), 15); // 高い方の点(10)から
+  setDimLineGap(above, 5);
+  assert.equal(above.offset, 15);
+  const left = { type: 'dim', dimType: 'linear', orient: 'v', p1: [0, 0], p2: [10, 40], offset: -12 };
+  assert.equal(dimLineGap(left), 12);
+  const al = { type: 'dim', dimType: 'linear', orient: 'aligned', p1: [0, 0], p2: [30, 40], offset: -7 };
+  assert.equal(dimLineGap(al), 7);
+  setDimLineGap(al, 9);
+  assert.equal(al.offset, -9);
+});
+
+test('setDimOrientation: 後から 水平/垂直/平行 を切り替え、寸法線は同じ側に同じ離れで置く', () => {
+  // 斜めの線(0,0)-(30,40)の下側に置いた水平寸法 → 平行寸法に
+  const d = { type: 'dim', dimType: 'linear', orient: 'h', p1: [0, 0], p2: [30, 40], offset: -10, textShift: 3 };
+  assert.ok(setDimOrientation(d, 'aligned'));
+  assert.equal(d.orient, 'aligned');
+  assert.equal(dimText(d), '50');
+  assert.equal(d.textShift, undefined); // 値の位置は中央に戻す
+  // 寸法線は元と同じ側(右下側=法線の逆側)に10mm
+  assert.equal(d.offset, -10);
+  // 平行 → 垂直: 寸法線を右側か左側に
+  assert.ok(setDimOrientation(d, 'v'));
+  assert.equal(d.orient, 'v');
+  assert.equal(dimText(d), '40');
+  assert.equal(d.offset, 40); // 右側(最大x=30)から10mm
+  // 2点が同じ高さのときは垂直にできない
+  const flat = { type: 'dim', dimType: 'linear', orient: 'h', p1: [0, 0], p2: [30, 0], offset: -10 };
+  assert.equal(setDimOrientation(flat, 'v'), false);
+  assert.equal(flat.orient, 'h');
 });

@@ -153,7 +153,7 @@ async function finishShot(key,caption,options={}) {
   await page.mouse.move(1270,790);await blur();await shot(key,caption,options);
 }
 async function drag(x1,y1,x2,y2,button='left') {
-  await move(x1,y1);await page.mouse.down({button});await move(x2,y2);await page.mouse.up({button});
+  await move(x1,y1);await page.mouse.down({button});await move(x2,y2);await settle();await page.mouse.up({button});
 }
 try {
   await reset({entities:[rect,{type:'circle',cx:100,cy:95,r:12},linear],zoom:2});
@@ -171,9 +171,10 @@ try {
   await move(40,60);await page.mouse.down();await move(160,130);
   await shot('selection-box','空白からドラッグ。青い破線の枠に全体が入る図形を選ぶ。',{height:360});await page.mouse.up();
   await reset({entities:[rect]});await click(50,95);
-  await drag(50,95,75,120);
-  assert.equal((await entities())[0].x,75);
-  await finishShot('move-after','矩形の輪郭をドラッグして右上へ25mm移動した結果。');
+  // 辺の真ん中(つまみ)ではない所を押して、全体を動かす
+  await drag(50,85,75,110);
+  {const moved=(await entities())[0];assert.deepEqual([moved.x,moved.y,moved.width,moved.height],[75,95,100,50]);}
+  await finishShot('move-after','矩形の輪郭をドラッグして右上へ25mm移動した結果。',{center:[115,105],width:760,height:440});
   await reset({entities:[rect]});await click(50,95);await page.keyboard.press('Control+c');await move(170,120);await page.keyboard.press('Control+v');
   assert.equal((await entities()).length,2);
   await finishShot('paste-after','Ctrl+Cでコピーし、マウスの位置にCtrl+Vで貼り付けた結果。',{width:740});
@@ -187,6 +188,11 @@ try {
   await shot('line-draft','始点①をクリックして終点②へマウスを動かした途中。緑の破線と実際の操作ガイド。',{width:780,marks:[[50,80,1],[150,120,2,18,-26]]});
   await click(150,120);assert.equal((await entities())[0].type,'line');
   await finishShot('line-result','2回目のクリックで確定した直線。長さ107.70mm、角度21.8°の例。',{marks:[[50,80,1],[150,120,2]]});
+  // Shift で水平・垂直・45°にそろえる
+  await reset();await tool('line');await click(60,70);await page.keyboard.down('Shift');await move(101,108);
+  assert.ok(await page.evaluate(()=>{const c=window.__seizu.draft.current;return Math.abs((c.y-70)-(c.x-60))<1e-6;}));
+  await shot('line-shift','Shiftを押しながら動かすと、線の向きが水平・垂直・斜め45°にそろう（45°の例）。',{width:780,marks:[[60,70,1]]});
+  await page.keyboard.up('Shift');await page.keyboard.press('Escape');
   await reset();await tool('line');
   for(const [id,value] of [['num-x','40'],['num-y','30'],['num-len','80'],['num-ang','30']]) await page.locator(`#${id}`).fill(value);
   await shot('numeric-draw','始点X=40、Y=30、長さ=80、角度=30を入力して「作図」を押す。',{selector:'#numpanel',pad:0});
@@ -291,6 +297,17 @@ try {
   await blur();await page.keyboard.press('Escape');
   await click(75,70);assert.equal(await page.evaluate(()=>window.__seizu.selection.size),1);
   await finishShot('explode-after','分解後は4本の直線。下辺①だけを選択できる。',{marks:[[75,70,1]]});
+  // グループ化: 円と四角をまとめる
+  await reset({entities:[{type:'circle',cx:80,cy:95,r:12},{type:'rect',x:105,y:83,width:30,height:24}]});
+  await click(92,95);await page.keyboard.down('Shift');await click(105,95);await page.keyboard.up('Shift');
+  assert.equal(await page.evaluate(()=>window.__seizu.selection.size),2);
+  await tab('edit');
+  await control('group-control','円と四角を選んでから、「編集」タブの「グループ化」を押す。','[data-panel="edit"] .group:nth-child(2)');
+  await page.locator('#group').click();
+  assert.ok(await page.evaluate(()=>{const g=window.__seizu.doc.entities.map(e=>e.group);return g[0]!=null&&g[0]===g[1];}));
+  await blur();await page.keyboard.press('Escape');await move(80,107);
+  assert.ok(await page.evaluate(()=>window.__seizu.hoverGroup!=null));
+  await shot('group-hover','グループ化した後。円にマウスを乗せると、まとまり全体が水色になり、クリックすると両方が選ばれる。',{center:[105,95],width:700,height:330});
   const cross=[{type:'line',x1:45,y1:90,x2:160,y2:90},{type:'line',x1:120,y1:60,x2:120,y2:135}];
   await reset({entities:cross});await tool('trim');await move(145,90);
   await shot('trim-before','交点より右の余分な区間①をクリックして切り取る。',{width:800,marks:[[145,90,1]]});await click(145,90);
@@ -303,6 +320,17 @@ try {
   await control('offset-control','「オフセット」の右の距離に10mmを指定する。','[data-panel="edit"] .group:nth-child(4)');await click(90,90);await move(90,110);
   await shot('offset-pick','元の直線①を選んだあと、上側②をクリックしてコピーする。',{width:850,marks:[[90,90,1],[90,110,2,-25,-25]]});await click(90,110);
   assert.equal((await entities()).length,2);await finishShot('offset-after','元の直線を残して、10mm上に平行な直線を作った結果。');
+  // つまみ: 四角の右上の角を動かす(下の辺の寸法も付いてくる)
+  await reset({entities:[rect,linear]});await click(50,95);
+  assert.ok((await page.evaluate(()=>window.__seizu.grips.length))>=8);
+  await finishShot('grip-before','四角を選ぶと、角と辺の真ん中に青い四角（つまみ）が出る。①右上の角のつまみを押して動かす。',{center:[110,95],width:820,height:420,marks:[[150,120,1,28,-28]]});
+  await drag(150,120,170,130);
+  {
+    const [gr,gd]=await entities();
+    assert.ok(Math.abs(gr.width-120)<0.01&&Math.abs(gr.height-60)<0.01&&gr.x===50&&gr.y===70);
+    assert.ok(Math.abs(gd.p2[0]-170)<0.01);
+  }
+  await finishShot('grip-after','右上の角を右上へ動かした結果。左下の角はそのままで大きさが変わり、下の寸法も120に付いてくる。',{center:[110,95],width:820,height:420});
   const corner=[{type:'line',x1:50,y1:75,x2:140,y2:75},{type:'line',x1:140,y1:75,x2:140,y2:135}];
   for(const [id,toolId] of [['fillet','fillet'],['chamfer','chamferEdit']]) {
     await reset({entities:corner});await tool(toolId);await page.locator('#fillet-r').fill('10');
@@ -315,6 +343,15 @@ try {
   await finishShot('dimension-result','幅100mmの矩形に「100」の長さ寸法を配置した結果。',{center:[100,85],height:430});
   await reset({entities:[{type:'line',x1:60,y1:70,x2:140,y2:120}]});await tool('dim');await click(60,70);await click(140,120);await move(100,125);await page.keyboard.down('Shift');await click(100,125);await page.keyboard.up('Shift');
   assert.equal((await entities())[1].orient,'aligned');await finishShot('dimension-aligned','3回目のクリックでShiftを押すと、斜めの直線に平行な寸法になる。',{height:430});
+  // 寸法を後から直す: つまみ(補助線の根元・寸法線の端)と、数値入力の向き・離れ
+  await reset({entities:[{type:'line',x1:60,y1:70,x2:140,y2:120},{type:'dim',dimType:'linear',orient:'h',p1:[60,70],p2:[140,120],offset:55,layer:'dim',lineType:'thin',override:null}]});
+  await click(80,55);
+  assert.deepEqual(await page.evaluate(()=>window.__seizu.grips.map(g=>g.key)),['p1','p2','line1','line2']);
+  await finishShot('dim-grips','寸法を選ぶと、補助線の根元（①測る点）と寸法線の両端（②）に青い四角が出る。押したまま動かして直す。',{center:[100,88],width:760,height:400,marks:[[60,70,1,-28,-26],[60,55,2,-28,26]]});
+  await shot('dim-panel','寸法を1つ選んだときの数値入力。「向き」と「寸法線までの離れ」を後から直せる。',{selector:'#numpanel',pad:0});
+  await page.locator('#np-orient').selectOption('aligned');
+  assert.equal((await entities())[1].orient,'aligned');
+  await finishShot('dim-aligned','向きを「平行（斜め）」にした結果。斜めの線に沿った長さ（94.34）を測る。',{center:[100,90],width:760,height:430});
   await reset({entities:[rect,linear]});await tool('select');await move(100,57.5);
   await shot('dimension-text-before','寸法の数字そのものを押したまま、線に沿って移動する。',{center:[110,75],width:820,height:430});await drag(100,57.5,170,57.5);
   assert.ok((await entities())[1].textShift>50);

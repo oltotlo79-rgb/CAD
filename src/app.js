@@ -11,9 +11,11 @@ import {
   DEFAULT_DASH_PATTERNS, copyDashPatterns, parseDashValue, dashArrayMm,
 } from './model.js';
 import { followEdits } from './follow.js';
+import { gripPoints, moveGrip, gripAnchor } from './grips.js';
 import { findSnap } from './snap.js';
 import {
   dimText, DIM_TEXT_MM, dimTextHit, dimShiftAt, fmtMm,
+  dimLineGap, setDimLineGap, setDimOrientation,
 } from './dims.js';
 import {
   WIDTH_CHOICES_MM, TEXT_CHOICES_MM, hasStroke, hasText, widthSettingMm, textHeightMm,
@@ -36,7 +38,7 @@ import {
   POLYGON_SIZE_MODES, parseSides, regularPolygonPoints, polygonFromCursor,
 } from './polygon.js';
 import {
-  nextGroupId, withGroupMembers, groupsFullyInside, ungroupEntities, renumberGroups,
+  nextGroupId, withGroupMembers, groupsFullyInside, ungroupEntities, renumberGroups, groupEntities,
 } from './groups.js';
 import {
   trimLine, extendLine, offsetEntity, filletLines, chamferLines,
@@ -89,6 +91,9 @@ const state = {
   polygonMode: 'side', // 正多角形の大きさの決め方(side=二面幅 / corner=対角 / edge=一辺)
   mouseScreen: null, // キャンバス上のマウス位置(操作ガイドの表示位置)
   dimTextDrag: null, // 寸法の値のドラッグ { id, snapshotPushed }
+  gripDrag: null,    // つまみ(グリップ)のドラッグ { id, key, anchor, snapshotPushed }
+  grips: [],         // 選んだ図形のつまみ [{ id, key, x, y }]
+  hoverGrip: null,   // マウスを乗せているつまみ
   rightPress: null,  // 右ボタンを押した画面位置(動かさずに離したらメニュー)
   showGuide: true,   // カーソル横の操作ガイド
   // 次に作る図形の線種・線の太さ・文字高さ(用紙mm)。ツールの種類ごとに覚える(widthMm:null=標準)
@@ -160,10 +165,13 @@ function centerMidGuides(cursor) {
 // 選択要素からの投影ガイド(投影ガイドONのとき)
 function currentGuides() {
   if (!state.projGuides || state.selection.size === 0) return { xs: [], ys: [] };
-  return projectionGuides(state.doc.entities.filter((e) => state.selection.has(e.id)));
+  // つまみで形を変えている図形からは出さない(動かしている点そのものに吸い付いてしまうため)
+  return projectionGuides(state.doc.entities.filter((e) =>
+    state.selection.has(e.id) && e.id !== state.gripDrag?.id));
 }
-// オブジェクトスナップ・ガイドスナップ優先、なければグリッドスナップ
-function resolvePoint(s) {
+// オブジェクトスナップ・ガイドスナップ優先、なければグリッドスナップ。
+// exclude: 吸着の相手にしない図形のid(つまみで形を変えている図形)
+function resolvePoint(s, { exclude = null } = {}) {
   const raw = screenToReal(s);
   const tolMm = 10 / pxPerRealMm();
   const centerMode = state.pen.shape.preset === 'center' && DRAW_TOOLS.includes(state.tool);
@@ -200,7 +208,7 @@ function resolvePoint(s) {
     // 引出線・バルーンの矢印の先(1点目)は、円・円弧の上下左右に加えて斜め45°の点にも吸い付く
     const leaderTip = (state.tool === 'leader' || state.tool === 'balloon') && !state.draft;
     const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale),
-      leaderTip ? { perimeterStepDeg: 45 } : {});
+      { perimeterStepDeg: leaderTip ? 45 : null, exclude });
     if (hit) cands.push(hit);
   }
   if (state.projGuides) {
@@ -214,6 +222,20 @@ function resolvePoint(s) {
   }
   state.snapHint = null;
   return snapReal(raw);
+}
+// Shift を押している間は、基準点からの向きを水平・垂直・斜め45°にそろえる。
+// 基準点は、直線なら始点、連続線・スプラインなら1つ前の点
+function shiftAnchor() {
+  const d = state.draft;
+  if (d?.kind === 'line') return d.start;
+  if ((d?.kind === 'polyline' || d?.kind === 'spline') && d.points.length > 0) return d.points[d.points.length - 1];
+  return null;
+}
+function constrainByShift(p, shiftKey, anchor = shiftAnchor()) {
+  if (!shiftKey || !anchor) return p;
+  const q = geo.constrainAngle(anchor, p);
+  if (q.x !== p.x || q.y !== p.y) state.snapHint = null; // 吸着の点から外れたので印を消す
+  return q;
 }
 // 作図中の線種プリセット・太さ → エンティティ属性
 const widthProp = (pen) => (pen.widthMm ? { widthMm: pen.widthMm } : {});
@@ -255,12 +277,54 @@ function render() {
   // 図形を1つ選んで数値欄に値が出ているときは、X・Yがどの点かを図の上に示す
   const editing = state.tool === 'select' ? selectedEditable() : null;
   state.referencePoint = editing ? referencePoint(editing, state.subSel) : null;
+  state.grips = currentGrips();
   draw(ctx, state);
   updateStatus();
   syncNumPanel();
   syncStyleUI();
   updateScrollbars();
   updateCursorTip();
+}
+
+// ---- つまみ(グリップ): 選んだ図形の端・角などの小さな四角。ドラッグでその点だけを動かす ----
+const GRIP_MAX_SELECTION = 30; // たくさん選んだときは画面が四角だらけにならないよう出さない
+function currentGrips() {
+  if (state.tool !== 'select' || state.moveDrag || state.copyDrag || state.draft?.kind === 'box') return [];
+  if (state.selection.size === 0 || state.selection.size > GRIP_MAX_SELECTION) return [];
+  return state.doc.entities
+    .filter((e) => state.selection.has(e.id) && isEntityVisible(state.doc, e))
+    .flatMap((e) => gripPoints(e).map((g) => ({ id: e.id, ...g })));
+}
+// 画面上の点 s の近く(7px)にあるつまみ
+function gripAt(s) {
+  const tol = 7;
+  let best = null;
+  let bd = tol;
+  for (const g of state.grips) {
+    const p = vt.paperToScreen(vt.realToPaper(g, state.doc.scale), state.view);
+    const d = Math.hypot(p.x - s.x, p.y - s.y);
+    if (d <= bd) { best = g; bd = d; }
+  }
+  return best;
+}
+function moveGripTo(s, shiftKey) {
+  const drag = state.gripDrag;
+  const e = state.doc.entities.find((en) => en.id === drag.id);
+  if (!e) return;
+  let p = resolvePoint(s, { exclude: e.id });
+  p = constrainByShift(p, shiftKey, drag.anchor);
+  state.mouseReal = p;
+  const before = structuredClone(state.doc.entities);
+  const trial = structuredClone(e);
+  if (!moveGrip(trial, drag.key, p) || JSON.stringify(trial) === JSON.stringify(e)) return;
+  if (!drag.snapshotPushed) {
+    pushSnapshot(state.history, snapshot(state.doc));
+    drag.snapshotPushed = true;
+    markDirty();
+  }
+  moveGrip(e, drag.key, p);
+  // 形を変えた図形に付いている寸法なども付いていく
+  followEdits(before, state.doc);
 }
 
 // ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
@@ -273,7 +337,8 @@ const PANEL_EDITABLE = ['line', 'circle', 'arc', 'rect', 'ellipse', 'polyline', 
 function selectedEditable() {
   if (state.selection.size !== 1) return null;
   const sel = state.doc.entities.find((e) => state.selection.has(e.id));
-  return sel && PANEL_EDITABLE.includes(sel.type) ? sel : null;
+  const linearDim = sel?.type === 'dim' && sel.dimType === 'linear';
+  return sel && (PANEL_EDITABLE.includes(sel.type) || linearDim) ? sel : null;
 }
 const DRAW_FIELDS = [
   { id: 'num-x', label: '始点X' },
@@ -308,9 +373,14 @@ function buildFields(defs) {
     const label = document.createElement('label');
     const cap = d.caption ? d.caption() : document.createElement('span');
     if (!d.caption) cap.textContent = d.label;
-    const input = document.createElement('input');
+    // options があれば選ぶ欄(寸法の向きなど)、なければ数字の欄
+    const input = document.createElement(d.options ? 'select' : 'input');
     input.id = d.id;
-    input.size = 7;
+    if (d.options) {
+      for (const [value, text] of d.options) input.add(new Option(text, value));
+    } else {
+      input.size = 7;
+    }
     input.value = d.value ?? '';
     if (d.id === 'np-x') {
       // 選んだ図形の X・Y は、図の上のオレンジの◎(基準点)の座標
@@ -329,6 +399,14 @@ function editSchema(sel) {
   const F = (key, label, value) => ({ id: `np-${key}`, label, value });
   const f2 = (v) => Number(v).toFixed(2);
   const f1 = (v) => Number(v).toFixed(1);
+  if (sel.type === 'dim') {
+    // 長さ寸法: 向き(後から変えられる)と、測る点から寸法線までの離れ
+    return { title: `寸法 ${dimText(sel)}:`, fields: [
+      { id: 'np-orient', label: '向き', value: sel.orient,
+        options: [['h', '水平'], ['v', '垂直'], ['aligned', '平行（斜め）']] },
+      F('gap', '寸法線までの離れ', f2(dimLineGap(sel))),
+    ] };
+  }
   if (sel.type === 'polyline' || sel.type === 'spline') {
     const name = sel.type === 'spline' ? 'スプライン' : sel.closed ? '多角形' : '連続線';
     if (state.subSel != null && state.subSel < polySegmentCount(sel)) {
@@ -471,17 +549,23 @@ function refitView() {
   const { w, h } = canvasCssSize();
   state.view = vt.fitPaperView(p.width, p.height, w, h);
 }
+let lastCanvasBottom = null; // 前回のキャンバス下端の画面上の位置
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const { w, h } = canvasCssSize();
+  const bottom = canvas.getBoundingClientRect().bottom;
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.view) {
-    state.view = { ...state.view, canvasWidth: w, canvasHeight: h };
+    // 下の数値入力欄の高さが変わった(図形を選んで欄が増えた等)ときも、図が上下に跳ねないよう
+    // 画面の上での位置を保つ(下端が上がった分だけ、表示の基準を上へずらす)
+    const shift = lastCanvasBottom == null ? 0 : (lastCanvasBottom - bottom) / state.view.pxPerMm;
+    state.view = { ...state.view, canvasWidth: w, canvasHeight: h, panY: state.view.panY + shift };
   } else {
     refitView();
   }
+  lastCanvasBottom = bottom;
   render();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -641,6 +725,7 @@ function setTool(tool) {
   state.subSel = null;
   state.hover = null;
   state.hoverGroup = null;
+  state.hoverGrip = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
   // キー操作で選んだツールも見えるよう、そのボタンがあるタブを開く
@@ -828,8 +913,19 @@ function selectInBox(startScreen, endScreen) {
 
 // ---- ツールのポインタ処理 ----
 function handleToolPointerDown(s, ev) {
-  const p = state.tool === 'select' ? snapReal(screenToReal(s)) : resolvePoint(s);
+  const p = state.tool === 'select' ? snapReal(screenToReal(s)) : constrainByShift(resolvePoint(s), ev.shiftKey);
   if (state.tool === 'select') {
+    // 選んだ図形のつまみを押した: その点だけを動かして形を変える
+    const grip = ev.shiftKey ? null : gripAt(s);
+    if (grip) {
+      const e = state.doc.entities.find((en) => en.id === grip.id);
+      state.gripDrag = {
+        id: grip.id, key: grip.key, snapshotPushed: false,
+        anchor: gripAnchor(e, grip.key) ?? { x: grip.x, y: grip.y },
+      };
+      render();
+      return;
+    }
     const hit = hitTestScreen(s);
     if (hit) {
       // ねじ穴などのまとまり(グループ)は、どれか1つをクリックすると全体を選ぶ
@@ -1251,10 +1347,8 @@ function handleToolPointerDown(s, ev) {
       render();
     }
   } else if (state.tool === 'mirror45') {
-    state.doc.mirror45 = p;
-    markDirty();
+    commitSettings(() => { state.doc.mirror45 = p; });
     setTool('select');
-    render();
   } else if (state.tool === 'origin') {
     commit(() => { state.doc.userOrigin = p; });
     setTool('select');
@@ -1283,13 +1377,20 @@ function moveDimText(s) {
   else delete e.textShift;
 }
 
-function handleToolPointerMove(s) {
-  const p = state.mouseReal;
+function handleToolPointerMove(s, ev) {
+  if (state.gripDrag) {
+    moveGripTo(s, ev.shiftKey);
+    return;
+  }
+  // 図形を動かすときも、Shift で水平・垂直・斜め45°にそろえる
+  const p = state.moveDrag ? constrainByShift(state.mouseReal, ev.shiftKey, state.moveDrag.startReal)
+    : state.mouseReal;
   if (state.dimTextDrag) {
     moveDimText(s);
     return;
   }
   if (state.moveDrag) {
+    state.mouseReal = p;
     const dx = p.x - state.moveDrag.lastReal.x;
     const dy = p.y - state.moveDrag.lastReal.y;
     if (dx !== 0 || dy !== 0) {
@@ -1331,6 +1432,13 @@ function handleToolPointerMove(s) {
 }
 
 function handleToolPointerUp() {
+  if (state.gripDrag) {
+    if (state.gripDrag.snapshotPushed) lastPanelKey = null; // 形を変えた後の値を数値欄に出す
+    state.gripDrag = null;
+    state.snapHint = null;
+    render();
+    return;
+  }
   if (state.dimTextDrag) {
     state.dimTextDrag = null;
     render();
@@ -1379,7 +1487,16 @@ canvas.addEventListener('pointerdown', (ev) => {
 });
 // マウスを乗せた図形のうち、今のツールでクリックできるものを強調する
 function updateHover(s) {
-  const busy = state.moveDrag || state.dimTextDrag || state.copyDrag || state.draft?.kind === 'box';
+  const busy = state.moveDrag || state.dimTextDrag || state.copyDrag || state.gripDrag
+    || state.draft?.kind === 'box';
+  // つまみの上なら、そのつまみを強調する(図形の強調はしない)
+  state.hoverGrip = !busy && state.tool === 'select' ? gripAt(s) : null;
+  if (state.hoverGrip) {
+    state.hover = null;
+    state.hoverGroup = null;
+    state.hoverDimText = false;
+    return;
+  }
   const hit = busy ? null : hitTestScreen(s);
   state.hover = hit && toolAccepts(state.tool, hit) ? hit.id : null;
   // 選択ツールでは、まとまり(ねじ穴など)全体を強調して、まとめて選ばれることを示す
@@ -1408,9 +1525,9 @@ canvas.addEventListener('pointermove', (ev) => {
     state.mouseReal = snapReal(screenToReal(s));
   } else {
     state.midGuides = centerMidGuides(screenToReal(s));
-    state.mouseReal = resolvePoint(s);
+    state.mouseReal = constrainByShift(resolvePoint(s), ev.shiftKey);
   }
-  handleToolPointerMove(s);
+  handleToolPointerMove(s, ev);
   updateHover(s);
   render();
 });
@@ -1418,6 +1535,7 @@ canvas.addEventListener('pointerleave', () => {
   state.mouseScreen = null;
   state.hover = null;
   state.hoverGroup = null;
+  state.hoverGrip = null;
   render();
 });
 canvas.addEventListener('pointerup', (ev) => {
@@ -1449,27 +1567,41 @@ canvas.addEventListener('pointerup', (ev) => {
     render();
     return;
   }
+  // 素早く動かして離すと、最後のマウスの動きが届く前に離した知らせが来ることがある。
+  // 離した位置までは必ず動かしてから確定する(図形が離した所より手前で止まらないように)
+  const up = eventScreen(ev);
+  const missed = !state.mouseScreen || up.x !== state.mouseScreen.x || up.y !== state.mouseScreen.y;
+  if (missed && (state.gripDrag || state.moveDrag || state.dimTextDrag)) {
+    state.mouseScreen = up;
+    state.mouseReal = snapReal(screenToReal(up));
+    handleToolPointerMove(up, ev);
+  }
   handleToolPointerUp(eventScreen(ev));
 });
 
 // ---- Undo/Redo・削除・複製 ----
-function doUndo() {
-  const snap = undo(state.history, snapshot(state.doc));
-  if (!snap) return;
+function restoreSnapshot(snap) {
+  const paperBefore = JSON.stringify(state.doc.paper);
   applySnapshot(state.doc, snap);
   state.selection.clear();
   state.subSel = null;
+  state.gripDrag = null;
+  // 設定も戻るので、画面の欄・レイヤー表・線種の間隔の表を合わせ、用紙が変わったら全体を表示し直す
+  syncSettingsUI();
+  buildLayerPanel();
+  buildDashPanel();
+  if (JSON.stringify(state.doc.paper) !== paperBefore) refitView();
+  lastPanelKey = null;
   markDirty();
   render();
 }
+function doUndo() {
+  const snap = undo(state.history, snapshot(state.doc));
+  if (snap) restoreSnapshot(snap);
+}
 function doRedo() {
   const snap = redo(state.history, snapshot(state.doc));
-  if (!snap) return;
-  applySnapshot(state.doc, snap);
-  state.selection.clear();
-  state.subSel = null;
-  markDirty();
-  render();
+  if (snap) restoreSnapshot(snap);
 }
 el('undo').addEventListener('click', doUndo);
 el('redo').addEventListener('click', doRedo);
@@ -1629,6 +1761,39 @@ function explodeSelection() {
 }
 el('explode').addEventListener('click', explodeSelection);
 
+// グループ化: 選んだ図形を1つのまとまりにする(どれか1つのクリックで全体が選ばれ、まとめて動く。「分解」で解除)
+function groupSelection() {
+  if (state.selection.size < 2) {
+    showMessage('グループ化: まとめたい図形を2つ以上選んでから押してください（Shift+クリックか、囲んで選ぶ）');
+    return;
+  }
+  if (groupEntities(structuredClone(state.doc.entities), [...state.selection]) == null) {
+    showMessage('グループ化: 選んだ図形はすでに1つのまとまりです');
+    return;
+  }
+  commit(() => { groupEntities(state.doc.entities, [...state.selection]); });
+  state.selection = withGroupMembers(state.doc.entities, [...state.selection]);
+  showMessage(`グループ化: ${state.selection.size}個の図形を1つのまとまりにしました（「分解」で元に戻せます）`);
+  render();
+}
+el('group').addEventListener('click', groupSelection);
+
+// 長さ寸法の向きを後から変える(水平・垂直・斜めの2点を結ぶ線に平行)
+const ORIENT_LABEL = { h: '水平', v: '垂直', aligned: '平行（斜め）' };
+function setSelectedDimOrientation(orient) {
+  const dims = state.doc.entities.filter((e) => state.selection.has(e.id)
+    && e.type === 'dim' && e.dimType === 'linear');
+  if (dims.length === 0) return;
+  let failed = 0;
+  commit(() => {
+    for (const e of dims) if (!setDimOrientation(e, orient)) failed++;
+  });
+  if (failed) {
+    const why = orient === 'h' ? '測る2点が縦にまっすぐ並んでいる' : orient === 'v' ? '測る2点が横にまっすぐ並んでいる' : '測る2点が同じ位置にある';
+    showMessage(`寸法の向き: ${why}ため、${failed}個は${ORIENT_LABEL[orient]}にできませんでした`);
+  }
+}
+
 // ---- 文字入力オーバーレイ(注記/引出線/寸法値編集で共用) ----
 const textEntry = el('text-entry');
 let textEntryMode = 'text';
@@ -1670,9 +1835,7 @@ textEntry.addEventListener('keydown', (ev) => {
       content: value, override: null, ...annoProps('dim'),
     }));
   } else if (mode === 'titlefield' && ctx2) {
-    state.doc.titleBlock.fields[ctx2.index].value = value;
-    markDirty();
-    render();
+    commitSettings(() => { state.doc.titleBlock.fields[ctx2.index].value = value; });
   } else if (mode === 'bomcell' && ctx2) {
     const target = state.doc.entities.find((en) => en.id === ctx2.id);
     if (target) {
@@ -1711,6 +1874,23 @@ function applyNumPanel() {
     return;
   }
   const v = (key) => parseNumber(document.getElementById(`np-${key}`)?.value ?? '');
+  if (sel.type === 'dim') {
+    const orient = el('np-orient').value;
+    const gap = v('gap');
+    lastPanelKey = null;
+    if (orient !== sel.orient) {
+      setSelectedDimOrientation(orient); // 向きを変えたら、離れは今の値を保つ
+      return;
+    }
+    if (!(gap >= 0)) {
+      showMessage('寸法線までの離れ: 0以上の数(mm)を入れてください');
+      render();
+      return;
+    }
+    if (Math.abs(gap - dimLineGap(sel)) < 1e-9) return;
+    commit(() => setDimLineGap(sel, gap));
+    return;
+  }
   const x = v('x');
   const y = v('y');
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -1830,13 +2010,19 @@ function syncSettingsUI() {
   el('grid-step').disabled = state.doc.grid.mode !== 'manual';
 }
 
+// 用紙・縮尺・方眼・レイヤー・表題欄・線種の間隔などの設定を変える。変える前を積むので元に戻せる
+function commitSettings(mutator, { refit = false } = {}) {
+  pushSnapshot(state.history, snapshot(state.doc));
+  mutator();
+  markDirty();
+  if (refit) refitView();
+  render();
+}
 el('paper-size').addEventListener('change', () => {
-  state.doc.paper.size = el('paper-size').value;
-  markDirty(); refitView(); render();
+  commitSettings(() => { state.doc.paper.size = el('paper-size').value; }, { refit: true });
 });
 el('paper-orientation').addEventListener('change', () => {
-  state.doc.paper.orientation = el('paper-orientation').value;
-  markDirty(); refitView(); render();
+  commitSettings(() => { state.doc.paper.orientation = el('paper-orientation').value; }, { refit: true });
 });
 el('scale-input').addEventListener('change', () => {
   const ratio = parseScale(el('scale-input').value);
@@ -1845,17 +2031,14 @@ el('scale-input').addEventListener('change', () => {
     el('scale-input').value = formatScale(state.doc.scale.ratio);
     return;
   }
-  state.doc.scale.ratio = ratio;
-  markDirty(); render();
+  commitSettings(() => { state.doc.scale.ratio = ratio; });
 });
 el('grid-mode').addEventListener('change', () => {
-  state.doc.grid.mode = el('grid-mode').value;
+  commitSettings(() => { state.doc.grid.mode = el('grid-mode').value; });
   el('grid-step').disabled = state.doc.grid.mode !== 'manual';
-  markDirty(); render();
 });
 el('grid-step').addEventListener('change', () => {
-  state.doc.grid.manualMm = Number(el('grid-step').value);
-  markDirty(); render();
+  commitSettings(() => { state.doc.grid.manualMm = Number(el('grid-step').value); });
 });
 el('grid-snap').addEventListener('change', () => {
   state.gridSnap = el('grid-snap').checked;
@@ -2029,6 +2212,8 @@ function runMenuAction(id) {
     case 'mirrorX': mirrorSelection('x'); break;
     case 'mirrorY': mirrorSelection('y'); break;
     case 'explode': explodeSelection(); break;
+    case 'group': groupSelection(); break;
+    case 'dimOrient': setSelectedDimOrientation(arg); break;
     case 'lineType': applyStyleToSelection('lineType', arg); break;
     case 'width': applyStyleToSelection('width', arg === '' ? null : Number(arg)); break;
     case 'textSize': applyStyleToSelection('text', Number(arg)); break;
@@ -2066,6 +2251,23 @@ function draftStage() {
   if (d.kind === 'angle') return d.p1 ? 2 : 1;
   return 1;
 }
+// つまみで形を変えている間の大きさ
+function gripLiveValues(e) {
+  if (!e) return '';
+  const f2 = (v) => Math.abs(v).toFixed(2);
+  if (e.type === 'line') {
+    const a = { x: e.x1, y: e.y1 };
+    const b = { x: e.x2, y: e.y2 };
+    return `長さ ${geo.distance(a, b).toFixed(2)}  角度 ${geo.angleDegOf(a, b).toFixed(1)}°`;
+  }
+  if (e.type === 'rect') return `幅 ${f2(e.width)}  高さ ${f2(e.height)}`;
+  if (e.type === 'circle') return `直径 ${f2(e.r * 2)}`;
+  if (e.type === 'arc') return `半径 ${f2(e.r)}  開始 ${e.startAngle.toFixed(1)}°  終了 ${e.endAngle.toFixed(1)}°`;
+  if (e.type === 'ellipse') return `横の半径 ${f2(e.rx)}  縦の半径 ${f2(e.ry)}`;
+  if (e.type === 'dim' && e.dimType === 'linear') return `寸法 ${dimText(e)}  寸法線までの離れ ${f2(dimLineGap(e))}`;
+  if (e.type === 'dim') return `寸法 ${dimText(e)}`;
+  return '';
+}
 // 作図中・移動中の長さなどの値
 function liveValues() {
   const p = state.mouseReal;
@@ -2076,6 +2278,7 @@ function liveValues() {
     const shift = Number(e?.textShift) || 0;
     return shift ? `値の位置: 中央から ${fmtMm(shift)}` : '値の位置: 中央';
   }
+  if (state.gripDrag) return gripLiveValues(state.doc.entities.find((en) => en.id === state.gripDrag.id));
   if (state.moveDrag?.snapshotPushed && p) {
     return `移動 X ${(p.x - state.moveDrag.startReal.x).toFixed(2)}  Y ${(p.y - state.moveDrag.startReal.y).toFixed(2)}`;
   }
@@ -2118,7 +2321,9 @@ function updateCursorTip() {
     guide = `正多角形: ${mode.target === 'side' ? '辺の真ん中' : '角'}の位置をクリック（数字を打つと${mode.label}を指定）`;
   }
   if (state.tool === 'select') {
-    guide = state.dimTextDrag ? '寸法の値を移動中（離すと確定）'
+    guide = state.gripDrag ? 'つまんだ点を移動中（離すと確定、Shiftで水平・垂直・45°）'
+      : state.hoverGrip ? 'つまみ: 押したまま動かすと、この点だけが動きます'
+      : state.dimTextDrag ? '寸法の値を移動中（離すと確定）'
       : state.hoverDimText ? '寸法の値: 押したまま動かすと寸法線に沿って移動' : null;
   }
   const values = liveValues();
@@ -2215,13 +2420,11 @@ function buildDashPanel() {
           input.value = String(state.doc.dashPatterns[type][key]);
           return;
         }
-        state.doc.dashPatterns[type][key] = v;
+        commitSettings(() => { state.doc.dashPatterns[type][key] = v; });
         input.value = String(v);
         // 見本だけ描き直す(欄を作り直すと、Tabで移った先の欄から入力位置が外れるため)
         sample.firstChild.setAttribute('stroke-dasharray',
           dashArrayMm(type, state.doc.dashPatterns).map((mm) => mm * 3).join(' '));
-        markDirty();
-        render();
       });
       list.append(input);
     }
@@ -2231,10 +2434,8 @@ function buildDashPanel() {
   foot.className = 'dash-foot';
   const reset = Object.assign(document.createElement('button'), { textContent: '標準に戻す', id: 'dash-reset' });
   reset.addEventListener('click', () => {
-    state.doc.dashPatterns = copyDashPatterns(DEFAULT_DASH_PATTERNS);
+    commitSettings(() => { state.doc.dashPatterns = copyDashPatterns(DEFAULT_DASH_PATTERNS); });
     buildDashPanel();
-    markDirty();
-    render();
   });
   foot.append(span('数字は印刷した紙の上の長さ(mm)。この図面に保存されます'), reset);
   list.append(foot);
@@ -2250,7 +2451,7 @@ function buildLayerPanel() {
     const vis = document.createElement('input');
     vis.type = 'checkbox';
     vis.checked = layer.visible;
-    vis.addEventListener('change', () => {
+    vis.addEventListener('change', () => commitSettings(() => {
       layer.visible = vis.checked;
       if (!layer.visible) {
         // 見えなくなった図形は選択から外す(見えないまま動かしたり消したりしないように)。
@@ -2262,16 +2463,14 @@ function buildLayerPanel() {
         if (state.selection.size === 0) state.subSel = null;
         state.hover = null;
         state.hoverGroup = null;
+        state.hoverGrip = null;
       }
-      markDirty();
-      render();
-    });
+    }));
     const pr = document.createElement('input');
     pr.type = 'checkbox';
     pr.checked = layer.printable;
     pr.addEventListener('change', () => {
-      layer.printable = pr.checked;
-      markDirty();
+      commitSettings(() => { layer.printable = pr.checked; });
     });
     list.append(name, vis, pr);
   }
@@ -2289,6 +2488,7 @@ function resetInteraction() {
   state.draft = null;
   state.hover = null;
   state.hoverGroup = null;
+  state.hoverGrip = null;
   state.hoverDimText = false;
   state.filletFirst = null;
   state.offsetPick = null;
