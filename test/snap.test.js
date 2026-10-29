@@ -83,3 +83,8 @@ test('引出線用(perimeterStepDeg:45): 円弧は弧の範囲内の45°ごと�
   // 弧のない側(225°)には点を作らない
   assert.equal(findSnap(doc, { x: -d, y: -d }, 2, 1, { perimeterStepDeg: 45 }), null);
 });
+
+test('exclude に指定した図形には吸着しない(つまみで形を変えている図形)', () => {
+  const doc = docWith({ type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 });
+  assert.equal(findSnap(doc, { x: 99, y: 1 }, 3, 1, { exclude: doc.entities[0].id }), null);
+});

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  nextGroupId, withGroupMembers, groupsFullyInside, ungroupEntities, renumberGroups,
+  nextGroupId, withGroupMembers, groupsFullyInside, ungroupEntities, renumberGroups, groupEntities,
 } from '../src/groups.js';
 
 // ねじ穴(グループ1)・単独の直線・別のねじ穴(グループ2)
@@ -55,4 +55,16 @@ test('renumberGroups: 複製したグループに元と別の新しい番号を�
   ];
   renumberGroups(clones, 7);
   assert.deepEqual(clones.map((c) => c.group), [7, 7, undefined, 8]);
+});
+
+test('groupEntities: 選んだ図形を1つのまとまりにする(元のまとまりは合わさる)', () => {
+  const ents = sample();
+  const gid = groupEntities(ents, [4, 5]);
+  assert.equal(gid, 3);
+  // 直線4と、グループ2(5,6)が1つになる
+  assert.deepEqual(ents.filter((e) => e.group === 3).map((e) => e.id), [4, 5, 6]);
+  assert.deepEqual(ents.filter((e) => e.group === 1).map((e) => e.id), [1, 2, 3]);
+  // 1つしかない(同じまとまりの中だけ)ならまとめない
+  assert.equal(groupEntities(ents, [1]), null);
+  assert.equal(groupEntities(ents, [4]), null);
 });

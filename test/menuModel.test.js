@@ -77,3 +77,20 @@ test('ねじ穴などのグループ・正多角形(閉じた連続線)を選ぶ
   const circle = { type: 'circle', lineType: 'solid', layer: 'outline' };
   assert.ok(!ids(buildContextMenu({ entities: [circle], tool: 'select' })).includes('explode'));
 });
+
+test('長さ寸法は「寸法の向き」(水平・垂直・平行)を切り替えられる', () => {
+  const dim = { type: 'dim', dimType: 'linear', orient: 'h', p1: [0, 0], p2: [10, 5], offset: -5 };
+  const items = buildContextMenu({ entities: [dim], tool: 'select' });
+  const orient = find(items, 'dimOrient');
+  assert.deepEqual(orient.children.map((c) => c.id), ['dimOrient:h', 'dimOrient:v', 'dimOrient:aligned']);
+  assert.equal(orient.children[0].checked, true);
+  assert.ok(!ids(buildContextMenu({ entities: [{ type: 'line' }], tool: 'select' })).includes('dimOrient'));
+});
+
+test('2つ以上の図形を選ぶと「グループ化」が出る(すでに1つのまとまりなら出ない)', () => {
+  const a = { type: 'line', lineType: 'solid', layer: 'outline' };
+  assert.ok(ids(buildContextMenu({ entities: [a, { ...a }], tool: 'select' })).includes('group'));
+  assert.ok(!ids(buildContextMenu({ entities: [a], tool: 'select' })).includes('group'));
+  const g = [{ ...a, group: 1 }, { ...a, group: 1 }];
+  assert.ok(!ids(buildContextMenu({ entities: g, tool: 'select' })).includes('group'));
+});
