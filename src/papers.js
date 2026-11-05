@@ -1,3 +1,5 @@
+// 用紙の大きさ(A2〜B5)と、図面枠(用紙の内側10mm)の位置。
+
 // 縦置き(portrait)基準の寸法。B列はJIS B。
 export const PAPER_SIZES = {
   A2: { width: 420, height: 594 },
@@ -10,6 +12,7 @@ export const PAPER_SIZES = {
 
 export const FRAME_MARGIN_MM = 10;
 
+// 用紙の大きさ(mm)。横向きなら幅と高さを入れ替える
 export function paperDimensions(size, orientation) {
   const base = PAPER_SIZES[size];
   if (!base) throw new Error(`unknown paper size: ${size}`);

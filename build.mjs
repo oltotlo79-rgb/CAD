@@ -2,6 +2,7 @@ import { build } from 'esbuild';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { HELP_SCREENSHOTS } from './src/helpScreenshots.js';
 import { escapeInlineScript, minifyBundle } from './scripts/dist-js.mjs';
+import { annotateBundle } from './scripts/annotate-bundle.mjs';
 
 const css = await readFile('www/styles.css', 'utf8');
 const template = (await readFile('www/index.html', 'utf8'))
@@ -21,13 +22,14 @@ const screenshotPlugin = {
 };
 
 await mkdir('dist', { recursive: true });
-// 1回だけ束ねた(bundle)JavaScriptを非圧縮版にそのまま使い、圧縮版はそれを圧縮して作る。
+// 1回だけ束ねた(bundle)JavaScriptに元のソースの説明コメントを戻して非圧縮版にし、
+// 圧縮版はそれを圧縮して作る(圧縮でコメントは消え、先頭の「/*! */」の説明だけが残る)。
 // 2つの配布物は必ず同時に作り直すので、片方だけ古くなることもない。
 const result = await build({
   entryPoints: ['src/app.js'], bundle: true, minify: false, charset: 'utf8',
   format: 'iife', write: false, plugins: [screenshotPlugin],
 });
-const readableJs = result.outputFiles[0].text;
+const readableJs = await annotateBundle(result.outputFiles[0].text, 'src');
 const outputs = [
   ['dist/seizu.html', await minifyBundle(readableJs)],
   ['dist/seizu.readable.html', readableJs],

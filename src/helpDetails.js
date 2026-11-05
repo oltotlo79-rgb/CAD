@@ -1,3 +1,5 @@
+// ヘルプ各項目の「開く場所・具体例・確認すること・うまくいかないとき」と、使う実画面の図。
+// helpContent.js の本文に、図と確認の欄を組み込んで完成版にする
 import { HELP_SCREENSHOTS } from './helpScreenshots.js';
 
 // 手順・結果・困った場合を全項目で用意し、実画面の図と結び付ける。
@@ -371,8 +373,10 @@ export const HELP_DETAILS = {
   },
 };
 
+// HTMLで特別な意味を持つ記号を置き換える(本文に安全に埋め込むため)
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
+// 実画面の図(画像とオレンジの番号の注釈)をHTMLにする
 export function screenshotFigure(key) {
   const shot = HELP_SCREENSHOTS[key];
   if (!shot) throw new Error(`ヘルプの実画面がありません: ${key}`);
@@ -383,6 +387,7 @@ export function screenshotFigure(key) {
   return `<figure class="help-figure help-screenshot"><button type="button" class="help-figure-open" aria-label="図を拡大: ${esc(shot.caption)}"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${shot.width} ${shot.height}" width="${shot.width}" height="${shot.height}" role="img" aria-label="${esc(shot.caption)}"><image href="${esc(shot.src)}" width="${shot.width}" height="${shot.height}"/>${marks}</svg><span class="help-figure-hint">クリックで拡大</span></button><figcaption>${esc(shot.caption)}</figcaption></figure>`;
 }
 
+// ヘルプの本文に、図・開く場所・具体例・確認・対処を組み込んだ完成版を作る
 export function completeHelpTopic(topic) {
   const detail = HELP_DETAILS[topic.id];
   if (!detail) throw new Error(`ヘルプの詳細がありません: ${topic.id}`);

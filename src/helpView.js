@@ -11,6 +11,7 @@ const SEARCH_INDEX = HELP_TOPICS.map((topic, index) => ({
   all: `${topic.title} ${(topic.keywords ?? []).join(' ')} ${plain(topic.html)}`.toLowerCase(),
 }));
 
+// ヘルプの検索。空白で区切ったすべての言葉を含む項目を、題名に含むものから順に返す
 export function searchHelpTopics(query) {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return HELP_TOPICS;
@@ -24,10 +25,12 @@ export function searchHelpTopics(query) {
     .map((entry) => entry.topic);
 }
 
+// 道具に合うヘルプの項目(F1 で開く説明)
 export function helpTopicForTool(tool) {
   return HELP_TOPICS.find((t) => (t.tools ?? []).includes(tool))?.id ?? null;
 }
 
+// ヘルプの画面(目次・検索・本文・図の拡大)を作り、開く・閉じるの操作を返す
 export function createHelp() {
   let overlay = null;
   let toc = null;

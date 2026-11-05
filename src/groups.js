@@ -6,6 +6,7 @@ export function nextGroupId(entities) {
   return entities.reduce((m, e) => Math.max(m, Number(e.group) || 0), 0) + 1;
 }
 
+// グループ番号 → そのグループの図形の一覧
 function membersByGroup(entities) {
   const map = new Map();
   for (const e of entities) {

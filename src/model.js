@@ -1,3 +1,5 @@
+// 図面のデータ(図形の一覧・用紙・縮尺・レイヤー・表題欄など)と、図形に対する基本の操作
+// (移動・回転・反転・拡大縮小・複製・当たり判定・吸着点・囲む四角など)。画面には依存しない
 import { FRAME_MARGIN_MM } from './papers.js';
 import {
   distance, angleDegOf, distancePointToSegment, catmullRomPoints,
@@ -27,6 +29,7 @@ export const DEFAULT_DASH_PATTERNS = {
   chain: { dash: 8, gap: 1.5, dot: 1.5 },
   chain2: { dash: 8, gap: 1.5, dot: 1.5 },
 };
+// 線種の間隔の設定をコピーする(書かれていない所は標準の値で補う)
 export function copyDashPatterns(patterns = DEFAULT_DASH_PATTERNS) {
   return Object.fromEntries(Object.entries(DEFAULT_DASH_PATTERNS)
     .map(([type, base]) => [type, { ...base, ...patterns?.[type] }]));
@@ -64,11 +67,13 @@ export const DEFAULT_LAYERS = [
   { id: 'aux', name: '補助線', visible: true, printable: false },
 ];
 
+// 今日の日付(表題欄の日付の初めの値)
 function todayString() {
   const d = new Date();
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// 新しい白紙の図面を作る
 export function createDocument({ paperSize = 'A4', orientation = 'landscape' } = {}) {
   const titleFields = DEFAULT_TITLE_FIELDS.map((f) =>
     (f.label === '日付' ? { ...f, value: todayString() } : { ...f }));
@@ -88,6 +93,7 @@ export function createDocument({ paperSize = 'A4', orientation = 'landscape' } =
   };
 }
 
+// 図形を図面に追加し、番号(id)を振る
 export function addEntity(doc, props) {
   const entity = { layer: 'outline', lineType: 'solid', ...props, id: doc.nextId };
   doc.nextId += 1;
@@ -95,11 +101,13 @@ export function addEntity(doc, props) {
   return entity;
 }
 
+// 指定した番号の図形を消す
 export function removeEntities(doc, ids) {
   const drop = new Set(ids);
   doc.entities = doc.entities.filter((e) => !drop.has(e.id));
 }
 
+// 指定した図形を dx, dy だけ平行移動する(寸法・ハッチなども種類ごとに正しく動かす)
 export function translateEntities(doc, ids, dx, dy) {
   const target = new Set(ids);
   for (const e of doc.entities) {
@@ -146,7 +154,9 @@ export function translateEntities(doc, ids, dx, dy) {
   }
 }
 
+// 座標を小数6桁に丸める
 const r6 = (v) => round6(v) || 0; // -0 を +0 に正規化
+// 角度を 0〜360° の範囲にする
 const norm360 = (a) => ((a % 360) + 360) % 360;
 
 // 選択要素を center まわりに +90°(反時計回り)回転する
@@ -214,6 +224,7 @@ export function rotateEntities(doc, ids, center, deg) {
   }
 }
 
+// ハッチの範囲を回す(90°刻みでないときに傾く四角・楕円は多角形にする)
 function rotateBoundary(b, pt, deg, quarter) {
   const odd = quarter && Math.abs(deg / 90) % 2 === 1;
   if (b.kind === 'circle') {
@@ -244,6 +255,7 @@ function rotateBoundary(b, pt, deg, quarter) {
   return { kind: 'polyline', points: points.map(([x, y]) => pt(x, y)) };
 }
 
+// 寸法を回す(種類ごとに、測る点・向き・寸法線の位置を回す)
 function rotateDim(e, pt, vec, deg, quarter) {
   const P = ([x, y]) => pt(x, y);
   if (e.dimType === 'dia' || e.dimType === 'rad') {
@@ -258,6 +270,7 @@ function rotateDim(e, pt, vec, deg, quarter) {
   }
 }
 
+// 長さ寸法を回す(90°刻みなら水平・垂直を入れ替え、それ以外は平行寸法にする)
 function rotateLinearDim(e, pt, vec, deg, quarter) {
   const [x1, y1] = e.p1;
   const [x2, y2] = e.p2;
@@ -353,6 +366,7 @@ export function scaleEntities(doc, ids, center, f) {
   }
 }
 
+// 指定した図形を複製して、dx, dy だけずらして置く
 export function duplicateEntities(doc, ids, dx, dy) {
   const clones = [];
   const freeGroup = nextGroupId(doc.entities);
@@ -366,6 +380,7 @@ export function duplicateEntities(doc, ids, dx, dy) {
   return clones;
 }
 
+// 図形を線分の並びとして表す(直線・矩形・連続線・スプライン。交点やトリムの計算に使う)
 export function entitySegments(e) {
   if (e.type === 'line') {
     return [[{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]];
@@ -515,6 +530,7 @@ export function ellipsePoint(e, paramDeg) {
 export function polySegmentCount(e) {
   return e.closed ? e.points.length : e.points.length - 1;
 }
+// 連続線の i 番目の線分の始点・長さ・角度
 export function polySegmentInfo(e, i) {
   const n = e.points.length;
   const start = { x: e.points[i][0], y: e.points[i][1] };
@@ -528,6 +544,7 @@ export function setPolySegment(e, i, start, len, ang) {
   e.points[i] = [start.x, start.y];
   e.points[(i + 1) % n] = [end.x, end.y];
 }
+// 点 p にいちばん近い線分の番号(連続線の1本を選ぶとき)
 export function nearestPolySegment(e, p) {
   let best = 0;
   let bestD = Infinity;
@@ -748,6 +765,7 @@ export function isEntityVisible(doc, e) {
 
 // 全角の数字・小数点・符号を半角に直す(日本語入力のまま打った値も受け付ける)
 const FULLWIDTH = { '．': '.', '－': '-', '−': '-', '＋': '+', '，': '' };
+// 全角の数字・記号を半角にする
 export function toHalfWidth(text) {
   return String(text)
     .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFF10 + 0x30))
@@ -760,6 +778,7 @@ export function parseNumber(text) {
   return s === '' ? NaN : Number(s);
 }
 
+// 「1:2」のような縮尺の文字を [1, 2] にする(正しくなければ null)
 export function parseScale(text) {
   const m = toHalfWidth(text).trim().match(/^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/);
   if (!m) return null;
@@ -769,6 +788,7 @@ export function parseScale(text) {
   return [num, den];
 }
 
+// [1, 2] → 「1:2」
 export function formatScale(ratio) {
   return `${ratio[0]}:${ratio[1]}`;
 }

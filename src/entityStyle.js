@@ -13,6 +13,7 @@ const TEXT_ANNOTATIONS = ['dim', 'leader', 'balloon', 'roughness', 'fcf', 'bom']
 
 // 線種(外形線・かくれ線など)を変えられるのは線・円などの図形だけ
 const LINE_TYPE_SHAPES = ['line', 'polyline', 'spline', 'rect', 'circle', 'arc', 'ellipse'];
+// 線種(外形線・かくれ線など)を持つ図形か
 export function hasLineType(e) {
   return LINE_TYPE_SHAPES.includes(e.type);
 }
@@ -35,10 +36,12 @@ export function applyPreset(e, key) {
   return true;
 }
 
+// 線の太さを変えられる図形か(文字以外)
 export function hasStroke(e) {
   return e.type !== 'text';
 }
 
+// 文字の大きさを持つ図形か(文字・寸法・記号・バルーン・部品表)
 export function hasText(e) {
   return e.type === 'text' || TEXT_ANNOTATIONS.includes(e.type);
 }

@@ -1,17 +1,22 @@
+// 図形の計算に使う基本の幾何(距離・角度・交点・丸めなど)。画面にもデータにも依存しない関数だけを置く
 const DEG = Math.PI / 180;
 
+// 小数6桁に丸める(計算で出る細かな誤差を消す)
 export function round6(v) {
   return Math.round(v * 1e6) / 1e6;
 }
 
+// 2点の距離
 export function distance(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
+// a から b への向き(度。右が0°、左回りがプラス)
 export function angleDegOf(a, b) {
   return Math.atan2(b.y - a.y, b.x - a.x) / DEG;
 }
 
+// 始点から、その長さ・角度の先にある点
 export function lineEndPoint(start, lengthMm, angleDeg) {
   return {
     x: round6(start.x + lengthMm * Math.cos(angleDeg * DEG)),
@@ -19,6 +24,7 @@ export function lineEndPoint(start, lengthMm, angleDeg) {
   };
 }
 
+// 点を、間隔 stepMm の方眼の交点に丸める
 export function snapToGrid(p, stepMm) {
   return {
     x: round6(Math.round(p.x / stepMm) * stepMm),
@@ -120,6 +126,7 @@ export function catmullRomPoints(points, closed, samples = 12) {
   return out;
 }
 
+// 点 p から線分 ab までのいちばん近い距離
 export function distancePointToSegment(p, a, b) {
   const abx = b.x - a.x, aby = b.y - a.y;
   const len2 = abx * abx + aby * aby;

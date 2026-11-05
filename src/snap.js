@@ -1,3 +1,4 @@
+// 点スナップ: マウスの近くにある図形の端・真ん中・中心・円周の点・交点を探して吸い付ける
 import {
   entitySnapPoints, entitySegments, entityBounds, isEntityVisible,
 } from './model.js';
@@ -27,12 +28,14 @@ function perimeterPoints(e, stepDeg) {
   return pts;
 }
 
+// 図形を囲む四角が点 p の近く(tolMm 以内)にあるか(調べる図形を先に絞る)
 function nearBounds(e, p, tolMm, k) {
   const b = entityBounds(e, k);
   return p.x >= b.minX - tolMm && p.x <= b.maxX + tolMm &&
          p.y >= b.minY - tolMm && p.y <= b.maxY + tolMm;
 }
 
+// 2つの図形の交点
 function intersectionsBetween(e1, e2) {
   const out = [];
   const segs1 = entitySegments(e1);

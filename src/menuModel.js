@@ -12,6 +12,7 @@ const EDITABLE_TEXT = ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'];
 // 選択図形の値が揃っていてその値なら true(チェック表示)
 const isCurrent = (common, value) => !!common && !common.mixed && common.value === value;
 
+// 右クリックメニューの項目を、選んだ図形・道具・描きかけの状態から決める
 export function buildContextMenu({
   entities = [], hasClipboard = false, tool = 'select', drafting = null,
 }) {

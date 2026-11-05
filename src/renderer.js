@@ -1,3 +1,5 @@
+// 画面(キャンバス)への描画。用紙・方眼・図形・寸法・選択の強調・つまみ・吸着の印・
+// 描きかけの形などを、今の表示倍率で描く。図面のデータは変えない
 import { paperDimensions, frameRect } from './papers.js';
 import { scaleK, paperToScreen, realToPaper } from './viewTransform.js';
 import { effectiveGridStep, MAJOR_STEP_MM } from './gridCalc.js';
@@ -29,10 +31,12 @@ const COLORS = {
   reference: '#e8590c', // 選択した図形の座標の基準点
 };
 
+// 実寸の座標 → 画面の座標(px)
 function realToScreen(p, doc, view) {
   return paperToScreen(realToPaper(p, doc.scale), view);
 }
 
+// 画面全体を描き直す(背景→用紙→方眼→投影ガイド→図面枠→表題欄→図形→原点→つまみ→印→描きかけ)
 export function draw(ctx, state) {
   const { doc, view, selection, draft } = state;
   const paper = paperDimensions(doc.paper.size, doc.paper.orientation);
@@ -108,6 +112,7 @@ function drawCopyGhost(ctx, doc, view, d) {
   ctx.restore();
 }
 
+// 方眼を描く(10mmごとの線は少し濃く)
 function drawGrid(ctx, doc, view, frame, k) {
   const pxPerRealMm = k * view.pxPerMm;
   const step = effectiveGridStep(doc.grid, pxPerRealMm);
@@ -137,6 +142,7 @@ function drawGrid(ctx, doc, view, frame, k) {
   }
 }
 
+// 表題欄を描く
 function drawTitleBlock(ctx, doc, view) {
   const tb = titleBlockLayout(doc);
   if (!tb) return;
@@ -200,6 +206,7 @@ function drawProjection(ctx, doc, view, state, paper, k) {
   ctx.restore();
 }
 
+// 線分の並びをまとめて描く
 function strokeSegments(ctx, doc, view, segments) {
   ctx.beginPath();
   for (const [a, b] of segments) {
@@ -211,6 +218,7 @@ function strokeSegments(ctx, doc, view, segments) {
   ctx.stroke();
 }
 
+// 図形1つを、種類ごとの描き方で描く
 function strokeEntity(ctx, doc, view, e, k) {
   const z = k * view.pxPerMm;
   if (e.type === 'circle') {
@@ -278,6 +286,7 @@ function strokeEntity(ctx, doc, view, e, k) {
   }
 }
 
+// 寸法の矢印(塗りつぶした三角)を描く
 function drawArrows(ctx, doc, view, arrows) {
   const L = DIM_ARROW_MM * view.pxPerMm;
   const W = L / 3;
@@ -298,6 +307,7 @@ function drawArrows(ctx, doc, view, arrows) {
   }
 }
 
+// 寸法・注記の文字を描く(回転にも対応)
 function drawDimTexts(ctx, doc, view, texts, textMm) {
   ctx.font = `${Math.max(6, textMm * view.pxPerMm)}px "Yu Gothic UI", "Meiryo", sans-serif`;
   ctx.textBaseline = 'alphabetic';
@@ -314,6 +324,7 @@ function drawDimTexts(ctx, doc, view, texts, textMm) {
   ctx.textAlign = 'left';
 }
 
+// すべての図形を描く(見えないレイヤーは飛ばし、選択・強調は色と太さを変える)
 function drawEntities(ctx, doc, view, state, k) {
   const { selection, subSel } = state;
   const visible = new Map(doc.layers.map((l) => [l.id, l.visible]));
@@ -397,6 +408,7 @@ function drawReferencePoint(ctx, doc, view, ref) {
   ctx.restore();
 }
 
+// 吸着した点の印(端=四角、真ん中=三角、交点=×、中心・円周=丸)
 function drawSnapHint(ctx, doc, view, hint) {
   const s = realToScreen(hint, doc, view);
   ctx.save();
@@ -418,6 +430,7 @@ function drawSnapHint(ctx, doc, view, hint) {
   ctx.restore();
 }
 
+// 原点(座標の0)の印
 function drawOrigin(ctx, doc, view) {
   const s = realToScreen(doc.userOrigin, doc, view);
   ctx.strokeStyle = COLORS.origin;
@@ -431,6 +444,7 @@ function drawOrigin(ctx, doc, view) {
   ctx.stroke();
 }
 
+// 描きかけの形(緑の破線)と範囲選択の枠を描く
 function drawDraft(ctx, doc, view, draft) {
   ctx.save();
   ctx.setLineDash([6, 4]);

@@ -1,13 +1,27 @@
 <!doctype html>
+<!--
+  製図ツール(seizu-tool)
+  Excel感覚で使える2Dの製図ツール。このHTMLファイル1つで動き、インターネットにはつながない。
+    画面の部品 … このHTMLの body(上から順に: ツールバー → 復元の案内 → 作図の画面 → 数値入力 → 状態表示)
+    見た目     … head の style(元は www/styles.css)
+    動き       … ページの最後の JavaScript(元は src/*.js。npm run build で作る)
+  dist/seizu.html(圧縮版)と dist/seizu.readable.html(非圧縮版)は、JavaScript を圧縮したかどうかだけが違う。
+  画面の部品の id(例: canvas、numpanel)は、JavaScript がその部品を見つけるための名前。
+-->
 <html lang="ja">
 <head>
+<!-- 文字コード(日本語を正しく表示するため)と、狭い画面での表示の幅 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- ブラウザのタブに出る題名(保存していない変更があると、先頭に * が付く) -->
 <title>製図ツール</title>
+<!-- 見た目の指定。配布ファイルでは、この場所に中身(色・並べ方)がそのまま埋め込まれている -->
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<!-- ===== ツールバー(画面の上): 1段目はタブと共通ボタン、2段目はタブごとの道具 ===== -->
 <header id="toolbar">
+  <!-- 1段目: タブ(押すと2段目の道具が切り替わる)と、いつも使うボタン -->
   <div id="topbar">
     <nav id="tabs" role="tablist">
       <button class="tab" data-tab="file" role="tab">ファイル</button>
@@ -16,6 +30,7 @@
       <button class="tab" data-tab="edit" role="tab">編集</button>
       <button class="tab" data-tab="view" role="tab">表示・設定</button>
     </nav>
+    <!-- いつも使うボタン: 元に戻す・やり直し・拡大・縮小・全体表示・ヘルプ -->
     <div class="group quick">
       <button id="undo" title="元に戻す (Ctrl+Z)&#10;直前の操作を取り消す">元に戻す</button>
       <button id="redo" title="やり直し (Ctrl+Y)&#10;取り消した操作をもう一度行う">やり直し</button>
@@ -25,10 +40,13 @@
       <button id="help-open" class="help-button" title="ヘルプ (F1)&#10;使い方の説明を開く。ツールを使っている時はそのツールの説明を開く">？ ヘルプ</button>
     </div>
   </div>
+  <!-- 2段目(リボン): 左端の「選択」、選んだタブの道具(panel)、右端の線種・太さ・文字 -->
   <div id="ribbon">
+    <!-- いつも左端にある「選択」の道具(図形を選ぶ・動かす・つまみで形を変える) -->
     <div class="group fixed">
       <button class="tool active" data-tool="select">選択</button>
     </div>
+    <!-- 「ファイル」タブ: 新規・開く・保存・名前を付けて保存 / SVG出力・印刷 -->
     <div class="panel" data-panel="file">
       <div class="group">
         <button id="file-new" title="新規&#10;新しい白紙の図面を始める">新規</button>
@@ -41,6 +59,7 @@
         <button id="print" title="印刷&#10;印刷画面を開く。倍率は100%(実際のサイズ)を選ぶと実寸で印刷。「PDFに保存」でPDFにもできる">印刷</button>
       </div>
     </div>
+    <!-- 「作図」タブ: 直線〜文字の作図 / 正多角形(右の欄は角の数) / ねじ穴(右のメニューはねじの太さ) -->
     <div class="panel active" data-panel="draw">
       <div class="group">
         <button class="tool" data-tool="line">直線</button>
@@ -65,6 +84,7 @@
         </select>
       </div>
     </div>
+    <!-- 「寸法・記号」タブ: 寸法・φ・R・角度・C・引出線 / 粗さ・公差枠 / ハッチ(斜線の角度・間隔) / バルーン・部品表 -->
     <div class="panel" data-panel="annotate">
       <div class="group">
         <button class="tool" data-tool="dim">寸法</button>
@@ -88,6 +108,7 @@
         <button class="tool" data-tool="bom">部品表</button>
       </div>
     </div>
+    <!-- 「編集」タブ: 回転・拡大縮小(右の欄に角度・倍率) / 反転・分解・グループ化 / トリム・延長 / オフセット / フィレット・面取り -->
     <div class="panel" data-panel="edit">
       <div class="group">
         <button id="rotate" title="回転&#10;選んだ図形を、右の角度だけ回す（＋は左回り、－は右回り）">回転</button>
@@ -115,6 +136,7 @@
         <label title="角を丸める半径 / 切り落とす大きさ(mm)">サイズ<input id="fillet-r" size="4" value="5"></label>
       </div>
     </div>
+    <!-- 「表示・設定」タブ: 用紙・縮尺 / 方眼とスナップ / 投影ガイド・45°線 / 原点・レイヤー・線種の間隔・操作ガイド -->
     <div class="panel" data-panel="view">
       <div class="group">
         <label title="用紙の大きさ">用紙 <select id="paper-size">
@@ -157,6 +179,7 @@
         <label title="マウスの横に「次に何をクリックするか」と長さなどを表示する"><input type="checkbox" id="show-guide" checked>操作ガイド</label>
       </div>
     </div>
+    <!-- いつも右端にある線種・線の太さ・文字の大きさのメニュー(図形を選んでいればその図形を、作図中なら次に描く図形を変える) -->
     <div class="group style">
       <label title="線種(線の見た目)。図形を選んでいる時はその図形を変更、作図ツールの時は次に描く線に使う&#10;外形線=太い実線 / かくれ線=破線 / 中心線=一点鎖線 / 想像線=二点鎖線 / 細実線=細い線 / 補助線=印刷しない下書き線">線種 <select id="line-style">
         <option value="outline" selected>外形線</option>
@@ -171,25 +194,34 @@
     </div>
   </div>
 </header>
+<!-- ===== 復元の案内: 前回、保存しないまま閉じたときだけ出る黄色い帯 ===== -->
 <div id="restore-banner">
   <span>前回、未保存の変更が残ったまま終了したようです。復元しますか?</span>
   <button id="restore-yes">復元する</button>
   <button id="restore-no">破棄する</button>
 </div>
+<!-- ===== 作図の画面: 図面を描くキャンバスと、その上に重ねて出す部品 ===== -->
 <main id="canvas-wrap">
+  <!-- 用紙・図形・寸法を描く画面(マウスの操作もここで受け取る) -->
   <canvas id="canvas"></canvas>
+  <!-- 文字・引出線・寸法の値を打ち込むときに、図面の上に出る白い入力欄 -->
   <input id="text-entry" placeholder="文字を入力してEnter">
+  <!-- マウスの横に出る操作ガイド(次にすること・長さなどの値) -->
   <div id="cursor-tip" hidden></div>
+  <!-- 画面の下と右のスクロールバー(つまみをドラッグ、空いた所をクリックでその位置へ) -->
   <div id="hscroll"><div id="hthumb"></div></div>
   <div id="vscroll"><div id="vthumb"></div></div>
 </main>
+<!-- ===== 数値入力: 数字で描く・選んだ図形を数字で直す欄(中身は道具や選んだ図形で変わる) ===== -->
 <section id="numpanel">
   <span id="np-title">数値入力:</span>
   <span id="np-fields"></span>
   <button id="num-draw">作図</button>
   <span class="hint">Escで中止 / 右クリックでメニュー / 寸法値・表題欄・部品表のマスはダブルクリックで記入 / 困ったら F1 でヘルプ</span>
 </section>
+<!-- ===== 状態表示: マウスの位置・方眼の間隔・縮尺・表示倍率・図形の数・案内 ===== -->
 <footer id="statusbar">&nbsp;</footer>
+<!-- 動きの部分。配布ファイルでは、この場所に JavaScript の中身がそのまま埋め込まれている -->
 <script src="app.js" defer></script>
 </body>
 </html>

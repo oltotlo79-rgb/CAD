@@ -1,9 +1,12 @@
+// 図面ファイル(JSON)への書き出しと読み込み。古いファイルも、足りない設定を補って開けるようにする
 import { createDocument, copyDashPatterns } from './model.js';
 
+// 図面を保存用の文字(JSON)にする
 export function serialize(doc) {
   return JSON.stringify(doc, null, 2);
 }
 
+// 保存した文字(JSON)から図面を作る(製図ツールの図面か・版を確かめる)
 export function deserialize(text) {
   let data;
   try {

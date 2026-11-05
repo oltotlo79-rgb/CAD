@@ -29,6 +29,7 @@ export function boundaryFromEntity(e) {
   return null;
 }
 
+// ハッチの範囲を囲む四角
 export function boundaryBBox(b) {
   if (b.kind === 'rect') {
     return { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.height };
@@ -47,6 +48,7 @@ export function boundaryBBox(b) {
   return bb;
 }
 
+// 四角・多角形の範囲の頂点の並び
 function polygonPoints(b) {
   if (b.kind === 'rect') {
     return [[b.x, b.y], [b.x + b.width, b.y], [b.x + b.width, b.y + b.height], [b.x, b.y + b.height]];
@@ -54,6 +56,7 @@ function polygonPoints(b) {
   return b.points;
 }
 
+// 点 p がハッチの範囲の中にあるか(クリックで選ぶときに使う)
 export function pointInBoundary(b, p) {
   if (b.kind === 'circle') {
     return Math.hypot(p.x - b.cx, p.y - b.cy) <= b.r;

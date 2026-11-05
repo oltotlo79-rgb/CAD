@@ -16,6 +16,7 @@ export const TITLE_BLOCK_W = 90;   // 用紙mm
 export const TITLE_ROW_H = 8;
 export const TITLE_LABEL_W = 25;
 
+// 表題欄の1行に書く文字(尺度・用紙は図面の設定から自動で)
 export function titleFieldText(doc, field) {
   if (field.bind === 'scale') return `${doc.scale.ratio[0]}:${doc.scale.ratio[1]}`;
   if (field.bind === 'paper') {
