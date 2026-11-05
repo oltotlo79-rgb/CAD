@@ -1,11 +1,15 @@
+/* ===== 製図ツールの見た目。配布ファイルでは HTML の中にそのまま埋め込まれる ===== */
+/* 全体: 幅・高さに枠線を含めて計算する。hidden の付いた部品は必ず隠す */
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+/* 画面全体: 縦に「ツールバー・作図の画面・数値入力・状態表示」を並べ、作図の画面が残りの高さを使う */
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column;
   font-family: "Yu Gothic UI", "Meiryo", sans-serif; font-size: 13px;
   background: #2b2e33; color: #ddd;
 }
+/* ===== ツールバー(1段目のタブ、2段目のリボン) ===== */
 #toolbar { background: #1e2126; border-bottom: 1px solid #000; }
 #topbar {
   display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px;
@@ -18,6 +22,7 @@ body {
 }
 .tab.active { background: #1e2126; color: #fff; border-color: #555; font-weight: bold; }
 #topbar .quick { padding-bottom: 4px; }
+/* 2段目(リボン): 幅が足りないときは道具が次の行へ回る(そのぶん作図の画面が縮む) */
 #ribbon {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
   padding: 6px 10px; min-height: 40px;
@@ -28,6 +33,7 @@ body {
 #ribbon .panel .group + .group { border-left: 1px solid #444; padding-left: 10px; }
 #ribbon .group.fixed { border-right: 1px solid #444; padding-right: 10px; }
 #ribbon .group.style { margin-left: auto; border-left: 1px solid #444; padding-left: 10px; }
+/* ===== ボタン・入力欄(暗い配色)。選んでいる道具は青、ヘルプは緑 ===== */
 button { background: #3a3f46; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 3px 10px; cursor: pointer; }
 button:hover { background: #4a5058; }
 button.tool.active { background: #0b6bcb; border-color: #0b6bcb; color: #fff; }
@@ -36,6 +42,7 @@ button.tool.active { background: #0b6bcb; border-color: #0b6bcb; color: #fff; }
 #toolbar label { display: inline-flex; gap: 3px; align-items: center; }
 select, input { background: #23262b; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 2px 4px; }
 input:disabled, select:disabled { opacity: 0.4; }
+/* 「レイヤー」「線種の間隔」: 押すと下に開く表 */
 #layer-panel, #dash-panel { position: relative; }
 #layer-panel summary, #dash-panel summary { cursor: pointer; padding: 3px 8px; background: #3a3f46; border: 1px solid #555; border-radius: 3px; list-style: none; }
 /* 線種の間隔: 線種ごとに 線の長さ・隙間・短い線(mm)と見本 */
@@ -49,6 +56,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 #dash-list svg { display: block; background: #fff; border-radius: 2px; }
 #dash-list .dash-foot { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; color: #9aa; font-size: 11px; }
 #dash-list .dash-foot button { margin-left: auto; }
+/* 数値入力の X の左に付けるオレンジの◎(図の上の基準点と同じ色) */
 .ref-mark { color: #e8590c; font-weight: bold; }
 #layer-list {
   position: absolute; right: 0; top: 100%; z-index: 20; min-width: 200px;
@@ -56,11 +64,13 @@ input:disabled, select:disabled { opacity: 0.4; }
   display: grid; grid-template-columns: auto auto auto; gap: 4px 12px; align-items: center;
 }
 #layer-list .head { color: #889; font-size: 11px; }
+/* 復元の案内(黄色い帯) */
 #restore-banner {
   display: none; gap: 10px; align-items: center;
   padding: 6px 10px; background: #6b5300; color: #ffe9a8;
   border-bottom: 1px solid #000;
 }
+/* ===== 作図の画面: キャンバスと、その上に重ねるスクロールバー・入力欄 ===== */
 #canvas-wrap { flex: 1; min-height: 0; position: relative; }
 #hscroll, #vscroll {
   position: absolute; z-index: 6; background: rgba(20, 22, 26, 0.55);
@@ -78,6 +88,7 @@ input:disabled, select:disabled { opacity: 0.4; }
   background: #fff; color: #111; border: 2px solid #0b6bcb;
 }
 #canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+/* ===== 数値入力(画面の下) ===== */
 #numpanel {
   display: flex; gap: 8px; align-items: center;
   padding: 5px 10px; background: #1e2126; border-top: 1px solid #000;
@@ -87,6 +98,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 /* 題名・欄・ボタンは縮めず、狭いときは右の説明文だけが折り返す */
 #np-title, #np-fields, #num-draw { flex-shrink: 0; white-space: nowrap; }
 #numpanel .hint { color: #888; margin-left: auto; }
+/* 状態表示(いちばん下) */
 #statusbar { padding: 4px 10px; background: #14161a; color: #9ab; font-family: Consolas, monospace; }
 
 /* カーソル横の操作ガイド */
@@ -115,6 +127,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 .popup-menu .sep { height: 1px; margin: 4px 0; background: #444; }
 
 /* ヘルプ(明るい配色で読みやすく) */
+/* ===== ヘルプの画面: 画面全体を暗くして、その上に白い窓を出す ===== */
 #help {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.45);

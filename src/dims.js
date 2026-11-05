@@ -1,3 +1,5 @@
+// 寸法・引出線・粗さ記号・公差枠・バルーンの見た目(線・矢印・文字の位置)を計算する。
+// 画面の描画とSVG出力(印刷)の両方がこの計算を使う。後から向き・寸法線の位置を直す関数もここ
 import { distance, angleDegOf } from './geometry.js';
 
 // 寸法の描画定数。すべて用紙上mm(縮尺に依存しない)
@@ -71,6 +73,7 @@ export function dimTextHit(e, p, tolMm, k = 1) {
   return textBoxHit(layout.texts[0], layout.textMm / k, p, tolMm);
 }
 
+// 角度寸法が測る角度(1本目の辺から2本目の辺まで左回り、度)
 function angleSweep(e) {
   const v = { x: e.vertex[0], y: e.vertex[1] };
   const a1 = angleDegOf(v, { x: e.p1[0], y: e.p1[1] });
@@ -323,7 +326,9 @@ export function dimLayout(e, k = 1) {
 
 // ---- 長さ寸法の寸法線の位置と向き(後から直す) ----
 const EPS = 1e-9;
+// 小数6桁に丸める(-0 は 0 にする)
 const r6 = (v) => Math.round(v * 1e6) / 1e6 || 0;
+// 測る2点を結ぶ線に直角な向き(長さ1の向き)
 function dimNormal(e) {
   const len = Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1]) || 1;
   return { x: -(e.p2[1] - e.p1[1]) / len, y: (e.p2[0] - e.p1[0]) / len };

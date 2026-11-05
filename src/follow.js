@@ -11,12 +11,19 @@ import {
 const EPS = 1e-5; // 座標は小数6桁に丸めているので、これ以下の差は同じ点とみなす
 const DEG = Math.PI / 180;
 const SHAPES = ['line', 'rect', 'polyline', 'spline', 'circle', 'arc', 'ellipse'];
+// 寸法などが付く相手になる図形か(直線・四角・連続線・円・円弧・楕円など)
 const isShape = (e) => SHAPES.includes(e.type);
+// 中心線(一点鎖線の直線)か
 const isCenterLine = (e) => e.type === 'line' && e.lineType === 'chain';
+// [x, y] → { x, y }
 const pt = ([x, y]) => ({ x, y });
+// { x, y } → [x, y](小数6桁に丸める)
 const arr = (p) => [round6(p.x) || 0, round6(p.y) || 0];
+// 点 p を d だけずらした点
 const add = (p, d) => ({ x: p.x + d.x, y: p.y + d.y });
+// 2点の差(a − b)
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+// 同じ点とみなせるか(差が EPS 以下)
 const same = (a, b) => distance(a, b) <= EPS;
 
 // 図形の特徴点。key は編集の後に同じ点を求め直すための名前、kind は end/mid/center
@@ -58,6 +65,7 @@ function features(e) {
   }
   return out;
 }
+// 図形の特徴点のうち、名前(key)が同じもの
 const featureOf = (e, key) => features(e).find((f) => f.key === key) ?? null;
 
 // 点 p が図形の線の上にあれば、その位置(線分の番号と割合、円の角度、楕円のパラメータ)
@@ -96,6 +104,7 @@ function curveParam(e, p) {
   }
   return null;
 }
+// curveParam で覚えた位置を、編集した後の図形の上の点に直す
 function pointAtParam(e, param) {
   if (param.seg != null) {
     if (e.type !== 'line' && e.type !== 'rect' && e.type !== 'polyline') return null;
@@ -193,6 +202,7 @@ function followAnnotation(old, e, changed) {
   return false;
 }
 
+// 2つのハッチの範囲(四角・円・楕円・多角形)が同じか
 function sameBoundary(a, b) {
   if (!a || !b || a.kind !== b.kind) return false;
   if (a.kind === 'polyline') {

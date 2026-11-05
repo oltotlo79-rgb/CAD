@@ -1,3 +1,5 @@
+// 図面ファイルの保存と読み込み。Chrome・Edge ではファイルを直接開いて同じファイルへ上書き保存し、
+// ほかのブラウザではダウンロードとファイル選択の画面で代わりをする
 const PICKER_OPTS = {
   types: [{
     description: '製図ツール図面 (JSON)',
@@ -5,6 +7,7 @@ const PICKER_OPTS = {
   }],
 };
 
+// 文字をファイルとしてダウンロードさせる(上書き保存できないブラウザ用)
 function downloadText(text, name) {
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -15,6 +18,7 @@ function downloadText(text, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ファイル選択の画面で図面を選んでもらって読む(ファイルを直接開けないブラウザ用)
 function openViaInput() {
   return new Promise((resolve) => {
     const input = document.createElement('input');
@@ -28,12 +32,14 @@ function openViaInput() {
   });
 }
 
+// 開いているファイルに中身を書き込む(上書き保存)
 async function writeHandle(handle, text) {
   const writable = await handle.createWritable();
   await writable.write(text);
   await writable.close();
 }
 
+// 保存・開くの窓口を作る。最後に開いた・保存したファイルを覚えて、次の保存で上書きする
 export function createFileIO() {
   let handle = null;
   return {

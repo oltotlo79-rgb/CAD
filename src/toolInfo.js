@@ -136,6 +136,7 @@ export function toolForKey(key) {
   return hit ? hit[0] : null;
 }
 
+// ボタンにマウスを乗せたときの説明(名前・キー・説明)
 export function tooltipText(tool) {
   const info = TOOL_INFO[tool];
   if (!info) return '';
@@ -151,6 +152,7 @@ export function guideFor(tool, stage) {
 
 // そのツールでクリックして使える図形か(マウスを乗せた時の強調表示に使う)
 const isLine = (e) => e.type === 'line';
+// 円か円弧か
 const isRound = (e) => e.type === 'circle' || e.type === 'arc';
 const PICKABLE = {
   select: () => true,
@@ -164,6 +166,7 @@ const PICKABLE = {
   rad: isRound,
   hatch: (e) => boundaryFromEntity(e) != null,
 };
+// その道具でクリックできる図形か
 export function toolAccepts(tool, e) {
   return PICKABLE[tool]?.(e) ?? false;
 }

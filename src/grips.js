@@ -4,7 +4,9 @@ import { round6 } from './geometry.js';
 import { ellipsePoint, isEllipseArc } from './model.js';
 
 const DEG = Math.PI / 180;
+// 小数6桁に丸める(-0 は 0 にする)
 const r6 = (v) => round6(v) || 0;
+// 点 { x, y } を作る
 const P = (x, y) => ({ x, y });
 
 // 矩形の局所座標(回転前、左下が原点)⇔ 図面の座標
@@ -20,6 +22,7 @@ function rectFrame(e) {
 const RECT_CORNERS = [[0, 0], [1, 0], [1, 1], [0, 1]];
 const RECT_EDGES = [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]]; // 下・右・上・左
 
+// 長さ寸法の寸法線の両端(補助線と交わる所)
 function dimLineEnds(e) {
   const [x1, y1] = e.p1;
   const [x2, y2] = e.p2;

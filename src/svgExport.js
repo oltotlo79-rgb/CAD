@@ -13,10 +13,13 @@ import { titleBlockLayout } from './titleBlock.js';
 const DEG = Math.PI / 180;
 const FONT = 'Yu Gothic UI, Meiryo, sans-serif';
 
+// 小数2桁に丸める(SVGの数字を短くする)
 const r2 = (v) => Math.round(v * 100) / 100;
+// SVGの文字の中で特別な意味を持つ記号を置き換える
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// 図面全体をSVG(印刷・書き出し用)にする。印刷しないレイヤーは含めない
 export function toSVG(doc) {
   const paper = paperDimensions(doc.paper.size, doc.paper.orientation);
   const frame = frameRect(doc.paper.size, doc.paper.orientation);
@@ -60,6 +63,7 @@ export function toSVG(doc) {
   return out.filter(Boolean).join('\n');
 }
 
+// 線の色・太さ・破線の指定
 function strokeAttrs(e, doc) {
   // 破線の間隔は図面ごとの設定(用紙上mm)
   const dashMm = dashArrayMm(e.lineType, doc.dashPatterns);
@@ -67,6 +71,7 @@ function strokeAttrs(e, doc) {
   return `stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"${dash}`;
 }
 
+// 図形1つを、SVGの要素にする
 function entityToSVG(e, doc, k, X, Y) {
   if (e.type === 'line') {
     return `<line x1="${X(e.x1)}" y1="${Y(e.y1)}" x2="${X(e.x2)}" y2="${Y(e.y2)}" ${strokeAttrs(e, doc)}/>`;

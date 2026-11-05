@@ -7,7 +7,7 @@ Excel感覚でグリッドに線を引ける軽量2D製図ツール。単一HTML
 
 `dist/seizu.html` をブラウザ(Chrome/Edge推奨)で開くだけ。配布もこのファイル1つをコピーするだけ。
 
-JavaScriptの変数名・関数名や日本語を読みやすくした非圧縮版は `dist/seizu.readable.html`。こちらも単一HTMLで動作します。
+JavaScriptの変数名・関数名や日本語を読みやすくした非圧縮版は `dist/seizu.readable.html`。元のソースの説明コメントも入れてあり、こちらも単一HTMLで動作します。
 両方のHTMLは同じ本文・CSS・画像・機能を含み、JavaScriptの圧縮の有無だけが違います(圧縮版は非圧縮版のJavaScriptをそのまま圧縮して作り、`npm test` と `npm run test:html` で一致を確かめています)。ヘルプの画像もHTMLに埋め込んでいるため、画像フォルダを一緒に配布する必要はありません。
 
 ### 基本操作
@@ -60,7 +60,7 @@ JavaScriptの変数名・関数名や日本語を読みやすくした非圧縮�
 - `npm install` — 初回のみ
 - `npm test` — ロジックのテスト(2つの配布HTMLが圧縮の有無以外同じであることも確認)
 - `npm run dev` — http://localhost:8000 で開発サーバー
-- `npm run build` — 非圧縮版 `dist/seizu.readable.html` と、その JavaScript をそのまま圧縮した圧縮版 `dist/seizu.html` を必ず両方同時に生成
+- `npm run build` — 非圧縮版 `dist/seizu.readable.html` と、その JavaScript をそのまま圧縮した圧縮版 `dist/seizu.html` を必ず両方同時に生成（非圧縮版には `src/*.js` の説明コメントを戻して入れる。圧縮でコメントは消え、先頭の「/*! */」の全体説明だけが両方に残る。コメントの差し込みでコードが変わらないことはビルド時に確かめる）
 - `npx playwright install chromium` — 実画面の撮影・HTML検証用ブラウザを初回に準備
 - `npm run help:capture` — 実際のDOM・CSS・Canvas描画を操作してヘルプ用の画面を撮影。画像と座標情報・撮影元のハッシュを更新
 - `npm run test:html` — 両HTMLをファイルから開き、全ヘルプの本文・画像・画面レイアウトの一致、画像の埋め込み、検索、拡大表示、狭い画面を検証
