@@ -12,9 +12,10 @@ const EDITABLE_TEXT = ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'];
 // 選択図形の値が揃っていてその値なら true(チェック表示)
 const isCurrent = (common, value) => !!common && !common.mixed && common.value === value;
 
-// 右クリックメニューの項目を、選んだ図形・道具・描きかけの状態から決める
+// 右クリックメニューの項目を、選んだ図形・道具・描きかけの状態から決める。
+// originAtFrame: 原点が用紙の枠の左下にあるか(動かしていれば「枠の左下に戻す」を出す)
 export function buildContextMenu({
-  entities = [], hasClipboard = false, tool = 'select', drafting = null,
+  entities = [], hasClipboard = false, tool = 'select', drafting = null, originAtFrame = true,
 }) {
   const items = [];
   if (drafting) {
@@ -23,6 +24,11 @@ export function buildContextMenu({
     }
     items.push({ id: 'cancelDraft', label: '作図をやめる', key: 'Esc' }, SEP);
   }
+  // 原点(座標の0の位置)を、右クリックした所(図形の角などに吸着)へ動かす。作図の途中は出さない
+  const originItems = drafting ? [] : [
+    { id: 'originHere', label: 'ここを原点にする' },
+    ...(originAtFrame ? [] : [{ id: 'originReset', label: '原点を枠の左下に戻す' }]),
+  ];
 
   if (entities.length === 0) {
     items.push(
@@ -35,6 +41,7 @@ export function buildContextMenu({
       { id: 'fit', label: '用紙全体を表示' },
     );
     if (tool !== 'select') items.push({ id: 'toSelect', label: '選択ツールに戻る', key: 'Esc' });
+    if (originItems.length > 0) items.push(SEP, ...originItems);
     items.push(SEP, { id: 'help', label: 'ヘルプを開く', key: 'F1' });
     return items;
   }
@@ -112,6 +119,7 @@ export function buildContextMenu({
     extra.push({ id: 'resetDimText', label: '寸法の値を中央に戻す' });
   }
   if (extra.length > 0) items.push(SEP, ...extra);
+  if (originItems.length > 0) items.push(SEP, ...originItems);
 
   items.push(SEP, { id: 'help', label: 'この図形の説明（ヘルプ）', key: 'F1' });
   return items;

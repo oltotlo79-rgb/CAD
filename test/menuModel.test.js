@@ -7,7 +7,7 @@ const find = (items, id) => items.find((i) => i.id === id);
 
 test('何もない所の右クリック: 貼り付け・元に戻す・すべて選択・全体表示・ヘルプ', () => {
   const items = buildContextMenu({ entities: [], hasClipboard: false, tool: 'select' });
-  assert.deepEqual(ids(items), ['paste', 'undo', 'redo', 'selectAll', 'fit', 'help']);
+  assert.deepEqual(ids(items), ['paste', 'undo', 'redo', 'selectAll', 'fit', 'originHere', 'help']);
   assert.equal(find(items, 'paste').disabled, true); // コピーしていなければ押せない
   const inTool = buildContextMenu({ entities: [], hasClipboard: true, tool: 'line' });
   assert.ok(ids(inTool).includes('toSelect'));
@@ -93,4 +93,18 @@ test('2つ以上の図形を選ぶと「グループ化」が出る(すでに1�
   assert.ok(!ids(buildContextMenu({ entities: [a], tool: 'select' })).includes('group'));
   const g = [{ ...a, group: 1 }, { ...a, group: 1 }];
   assert.ok(!ids(buildContextMenu({ entities: g, tool: 'select' })).includes('group'));
+});
+
+test('原点: 右クリックした所を原点にできる。原点を動かしていれば枠の左下に戻す項目も出る', () => {
+  const atFrame = buildContextMenu({ entities: [], tool: 'select', originAtFrame: true });
+  assert.ok(ids(atFrame).includes('originHere'));
+  assert.ok(!ids(atFrame).includes('originReset'));
+  const moved = buildContextMenu({ entities: [], tool: 'select', originAtFrame: false });
+  assert.ok(ids(moved).includes('originHere') && ids(moved).includes('originReset'));
+  // 図形の上(角など)で右クリックしても、その点を原点にできる
+  const onShape = buildContextMenu({ entities: [{ type: 'rect', lineType: 'solid', layer: 'outline' }], tool: 'select' });
+  assert.ok(ids(onShape).includes('originHere'));
+  // 作図の途中は出さない(作図を終える・やめるを優先)
+  const drafting = buildContextMenu({ entities: [], tool: 'line', drafting: 'line', originAtFrame: false });
+  assert.ok(!ids(drafting).includes('originHere') && !ids(drafting).includes('originReset'));
 });

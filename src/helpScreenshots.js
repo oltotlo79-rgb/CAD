@@ -152,14 +152,14 @@ export const HELP_SCREENSHOTS = {
   "menu-shape": {
     "src": "help/screenshots/menu-shape.png",
     "width": 264,
-    "height": 431,
+    "height": 467,
     "caption": "矩形の上で右クリックした実際のメニュー。",
     "marks": []
   },
   "menu-empty": {
     "src": "help/screenshots/menu-empty.png",
     "width": 224,
-    "height": 223,
+    "height": 259,
     "caption": "空白で右クリックした実際のメニュー。",
     "marks": []
   },
@@ -1051,7 +1051,7 @@ export const HELP_SCREENSHOTS = {
   "dimension-text-menu": {
     "src": "help/screenshots/dimension-text-menu.png",
     "width": 264,
-    "height": 494,
+    "height": 530,
     "caption": "右クリックの「寸法の値を中央に戻す」で位置を戻せる。",
     "marks": []
   },
@@ -1542,6 +1542,27 @@ export const HELP_SCREENSHOTS = {
     "width": 1280,
     "height": 45,
     "caption": "原点を左下に合わせたので、矩形の左下XとYが0.00になる。",
+    "marks": []
+  },
+  "origin-panel": {
+    "src": "help/screenshots/origin-panel.png",
+    "width": 1280,
+    "height": 39,
+    "caption": "原点設定を選ぶと、画面下が「原点の移動」になる。右へ40・上へ60を入れて「移動」を押す（Enterでも可）。",
+    "marks": []
+  },
+  "origin-panel-after": {
+    "src": "help/screenshots/origin-panel-after.png",
+    "width": 1280,
+    "height": 39,
+    "caption": "原点が矩形の左下に移り、右に今の原点（枠の左下から右へ40・上へ60）が出る。「枠の左下に戻す」ではじめの位置に戻る。",
+    "marks": []
+  },
+  "origin-menu": {
+    "src": "help/screenshots/origin-menu.png",
+    "width": 264,
+    "height": 475,
+    "caption": "原点にしたい所（矩形の右上の角）で右クリックし、「ここを原点にする」を選ぶ。",
     "marks": []
   },
   "paper-controls": {
