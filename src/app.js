@@ -530,7 +530,7 @@ function syncNumPanel() {
     el('num-draw').textContent = '作図';
   }
 }
-// 原点設定の数値欄: 今の原点から右へ・上へ動かす量と、「枠の左下に戻す」ボタン、今の原点の位置
+// 原点設定の数値欄: 今の原点から右へ・上へ動かす量と、「初期位置に戻す」ボタン、今の原点の位置(初期位置から)
 function buildOriginPanel() {
   el('np-title').textContent = '原点の移動:';
   buildFields([
@@ -540,14 +540,14 @@ function buildOriginPanel() {
   el('num-draw').textContent = '移動';
   const from = originFromFrame(state.doc);
   const reset = Object.assign(document.createElement('button'), {
-    id: 'org-reset', type: 'button', textContent: '枠の左下に戻す',
-    title: '原点を、はじめの位置（用紙の枠の左下）に戻す',
-    disabled: isOriginAtFrame(state.doc),
+    id: 'org-reset', type: 'button', textContent: '初期位置に戻す',
+    title: '原点を初期位置（はじめの位置＝用紙の枠の左下）に戻す。図形は動きません',
   });
   reset.addEventListener('click', resetOrigin);
   const info = Object.assign(document.createElement('span'), {
     id: 'org-info', className: 'org-info',
-    textContent: `今の原点: 枠の左下から 右へ ${from.x.toFixed(2)}・上へ ${from.y.toFixed(2)} mm`,
+    title: '初期位置＝はじめの位置（用紙の枠の左下）',
+    textContent: `今の原点: 初期位置（枠の左下）から 右へ ${from.x.toFixed(2)}・上へ ${from.y.toFixed(2)} mm`,
   });
   el('np-extra').append(reset, info);
 }
@@ -577,10 +577,16 @@ function moveOriginFromInputs() {
   el('org-dx')?.focus();
   el('org-dx')?.select();
 }
-// 原点を、はじめの位置(用紙の枠の左下)に戻す
+// 原点を初期位置(はじめの位置＝用紙の枠の左下)に戻す。すでに初期位置なら、そう知らせるだけ
 function resetOrigin() {
-  setOrigin(frameCornerReal(state.doc), '原点を枠の左下に戻しました');
+  if (isOriginAtFrame(state.doc)) {
+    showMessage('原点はすでに初期位置（用紙の枠の左下）にあります');
+    return;
+  }
+  setOrigin(frameCornerReal(state.doc), '原点を初期位置（用紙の枠の左下）に戻しました（図形は動きません。Ctrl+Zで取り消せます）');
 }
+// 「表示・設定」タブの「原点を戻す」ボタン(どの道具を使っていても押せる)
+el('origin-reset').addEventListener('click', resetOrigin);
 // 画面下の状態表示(マウスの位置・方眼・縮尺・倍率・図形の数・案内)を更新する
 function updateStatus() {
   const o = state.doc.userOrigin;

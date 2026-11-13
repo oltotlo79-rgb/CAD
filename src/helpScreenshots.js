@@ -94,7 +94,7 @@ export const HELP_SCREENSHOTS = {
   },
   "tab-view": {
     "src": "help/screenshots/tab-view.png",
-    "width": 1141,
+    "width": 1234,
     "height": 52,
     "caption": "「表示・設定」タブの実際のボタン。",
     "marks": []
@@ -152,14 +152,14 @@ export const HELP_SCREENSHOTS = {
   "menu-shape": {
     "src": "help/screenshots/menu-shape.png",
     "width": 264,
-    "height": 467,
+    "height": 494,
     "caption": "矩形の上で右クリックした実際のメニュー。",
     "marks": []
   },
   "menu-empty": {
     "src": "help/screenshots/menu-empty.png",
     "width": 224,
-    "height": 259,
+    "height": 286,
     "caption": "空白で右クリックした実際のメニュー。",
     "marks": []
   },
@@ -1051,7 +1051,7 @@ export const HELP_SCREENSHOTS = {
   "dimension-text-menu": {
     "src": "help/screenshots/dimension-text-menu.png",
     "width": 264,
-    "height": 530,
+    "height": 557,
     "caption": "右クリックの「寸法の値を中央に戻す」で位置を戻せる。",
     "marks": []
   },
@@ -1555,14 +1555,21 @@ export const HELP_SCREENSHOTS = {
     "src": "help/screenshots/origin-panel-after.png",
     "width": 1280,
     "height": 39,
-    "caption": "原点が矩形の左下に移り、右に今の原点（枠の左下から右へ40・上へ60）が出る。「枠の左下に戻す」ではじめの位置に戻る。",
+    "caption": "原点が矩形の左下に移り、右に今の原点（初期位置＝枠の左下から右へ40・上へ60）が出る。「初期位置に戻す」で、はじめの位置に戻る。",
     "marks": []
   },
   "origin-menu": {
     "src": "help/screenshots/origin-menu.png",
     "width": 264,
-    "height": 475,
+    "height": 494,
     "caption": "原点にしたい所（矩形の右上の角）で右クリックし、「ここを原点にする」を選ぶ。",
+    "marks": []
+  },
+  "origin-reset-button": {
+    "src": "help/screenshots/origin-reset-button.png",
+    "width": 429,
+    "height": 52,
+    "caption": "「表示・設定」タブの「原点を戻す」。押すと、動かした原点が初期位置（用紙の枠の左下）に戻る（どの道具を使っていても押せる）。",
     "marks": []
   },
   "paper-controls": {
