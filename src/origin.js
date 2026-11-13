@@ -1,4 +1,4 @@
-// 原点(座標の0の位置)の計算。原点を数値で動かす・用紙の枠の左下に戻すときに使う
+// 原点(座標の0の位置)の計算。原点を数値で動かす・初期位置(用紙の枠の左下)に戻すときに使う
 import { FRAME_MARGIN_MM } from './papers.js';
 import { paperToReal } from './viewTransform.js';
 

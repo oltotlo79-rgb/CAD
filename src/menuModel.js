@@ -13,7 +13,7 @@ const EDITABLE_TEXT = ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'];
 const isCurrent = (common, value) => !!common && !common.mixed && common.value === value;
 
 // 右クリックメニューの項目を、選んだ図形・道具・描きかけの状態から決める。
-// originAtFrame: 原点が用紙の枠の左下にあるか(動かしていれば「枠の左下に戻す」を出す)
+// originAtFrame: 原点が初期位置(用紙の枠の左下)にあるか(あれば「原点を初期位置に戻す」は押せない)
 export function buildContextMenu({
   entities = [], hasClipboard = false, tool = 'select', drafting = null, originAtFrame = true,
 }) {
@@ -27,7 +27,7 @@ export function buildContextMenu({
   // 原点(座標の0の位置)を、右クリックした所(図形の角などに吸着)へ動かす。作図の途中は出さない
   const originItems = drafting ? [] : [
     { id: 'originHere', label: 'ここを原点にする' },
-    ...(originAtFrame ? [] : [{ id: 'originReset', label: '原点を枠の左下に戻す' }]),
+    { id: 'originReset', label: '原点を初期位置に戻す', disabled: originAtFrame },
   ];
 
   if (entities.length === 0) {

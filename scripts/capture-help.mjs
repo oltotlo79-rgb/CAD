@@ -462,10 +462,12 @@ try {
   await shot('origin-panel','原点設定を選ぶと、画面下が「原点の移動」になる。右へ40・上へ60を入れて「移動」を押す（Enterでも可）。',{selector:'#numpanel',pad:0});
   await page.locator('#num-draw').click();assert.deepEqual(await page.evaluate(()=>window.__seizu.doc.userOrigin),{x:50,y:70});
   await page.evaluate(()=>document.activeElement?.blur());await settle();
-  await shot('origin-panel-after','原点が矩形の左下に移り、右に今の原点（枠の左下から右へ40・上へ60）が出る。「枠の左下に戻す」ではじめの位置に戻る。',{selector:'#numpanel',pad:0});
+  await shot('origin-panel-after','原点が矩形の左下に移り、右に今の原点（初期位置＝枠の左下から右へ40・上へ60）が出る。「初期位置に戻す」で、はじめの位置に戻る。',{selector:'#numpanel',pad:0});
   await reset({entities:[rect]});await click(150,120,{button:'right'});
   await shot('origin-menu','原点にしたい所（矩形の右上の角）で右クリックし、「ここを原点にする」を選ぶ。',{selector:'.popup-menu',pad:12});
   await page.locator('.popup-menu .item',{hasText:'ここを原点にする'}).click();assert.deepEqual(await page.evaluate(()=>window.__seizu.doc.userOrigin),{x:150,y:120});
+  await tab('view');await control('origin-reset-button','「表示・設定」タブの「原点を戻す」。押すと、動かした原点が初期位置（用紙の枠の左下）に戻る（どの道具を使っていても押せる）。','[data-panel="view"] .group:nth-child(4)');
+  await page.locator('#origin-reset').click();assert.deepEqual(await page.evaluate(()=>window.__seizu.doc.userOrigin),{x:10,y:10});
   await reset({entities:[rect,linear]});await tab('view');await control('paper-controls','用紙A4・横・縮尺1:1の初期設定。','[data-panel="view"] .group:first-child');await page.locator('#zoom-fit').click();
   await finishShot('paper-one','縮尺1:1の図面全体。幅100mmの矩形。',{full:true});await page.locator('#scale-input').fill('1:2');await page.locator('#scale-input').press('Tab');
   await finishShot('paper-half','縮尺1:2では紙の上の図形が半分になり、寸法は実物の100mmのまま。',{full:true});

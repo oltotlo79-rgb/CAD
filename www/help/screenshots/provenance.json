@@ -6,9 +6,9 @@
   "deviceScaleFactor": 1,
   "browser": "153.0.8010.12",
   "sourceHashes": {
-    "www/index.html": "2a620856ad24f775bc5ab0cf01bd9bd6d5392beca741bc1b167a7de7c5955004",
+    "www/index.html": "a3fb105ae987276b89750cc6c80597dd9c76d3acfb22656431a7be200a814136",
     "www/styles.css": "fe396d1edcaa2e820b77c15ed59468f9aa577bb066a7b55efc51ea9f1d5fe352",
-    "src/app.js": "cbbc23aadbea0a311c0f196348081888275f631fbb93577199f8affa071074bf",
+    "src/app.js": "70e4ecd6e4fac04f356d2340442d4d133617e70ab2fe42506fc3172f2dfdebe4",
     "src/bom.js": "b4a7c6e17539aee65aa9b109bc6546b4d6b10df3afe04dbc5f12666c66c92ac5",
     "src/dims.js": "d1bf8e45db78c7c3d73af688570f1f2711904ddea85bb99352497ea8d1a46d81",
     "src/editOps.js": "b797cd41abe6c172c1676043800169b05b55c2ccccc266a13a8b49f182d53e7d",
@@ -21,13 +21,13 @@
     "src/groups.js": "448494b46f78fec575c0e5b7824f590a89d6abf7a1459c135d8d6bab73b43934",
     "src/guides.js": "e807334da5029b46e277d741f23e7f2d5a41567bdacfc78f539b9b0b197c8306",
     "src/hatch.js": "59af59258d3795406a742e5da069fb7c1be06d292fb23d47f64976220e6a4c58",
-    "src/helpContent.js": "1e9b6f9360ce3e3765581464d82f70c469678090c5c4e298472bc2c99396d2f1",
-    "src/helpDetails.js": "a994e99d5e11b02dd5ecc16ade627374a0c0ab072ca69b5f00692011791b1b48",
+    "src/helpContent.js": "3f0bef24d3bd8a15052d6dbe16d958e7c4ec6ba99d4c1bbb6cb554224286a47e",
+    "src/helpDetails.js": "3d56f5fd15f52ec6ea6efa5424ddebc58c8f19dcb86ab6c0949d4e4dd7962275",
     "src/helpView.js": "e967cc90bbe666987bdcfabdb5d16975b8e7f221a14711c288502f45bbb1f42a",
     "src/history.js": "dc15cba4b9d41361a078d4a49b42b51cdc17b2846c0acdd15a3b9e63d0d97338",
-    "src/menuModel.js": "c0b4f4b506b6aa1676e5b6fa1dca9f1a161bde82969b2229580b847575a8d9c4",
+    "src/menuModel.js": "15b95679f73bc53f1201f11de3f02e31738c18b1c6fce7a5223dc31d2ecf7192",
     "src/model.js": "91737f89fc6e8a105bb981231018692f00e862945e85fb1a22137ef8a36814c1",
-    "src/origin.js": "593935fada5e7ba4a3246b97e8c148e37949bcbf8d7ebaeb0300ab6d1605f4a6",
+    "src/origin.js": "d6db53b85368ca1c21045317999b5c896d7d9a83000f366638ec0ca8b07befcf",
     "src/papers.js": "f242fef481277b9317a4110d91d03d63a03230c34fe581f2253d0500795cd145",
     "src/polygon.js": "2d1282f1eafc9d08f2b6fee80b3a4cec0929171e7f49a65175e7aa986a5ba91e",
     "src/popupMenu.js": "1b09059507cf0efe38f6b37574a22b3759293f4f0a5c42456b18f9e36b7cfa83",
@@ -38,8 +38,8 @@
     "src/svgExport.js": "84550b6c1ef8f46a2eaad7331ea97d234df8a270bea5e0b306596b6900f7c6e5",
     "src/thread.js": "cffbdbc3e76b434145b238098618620f6c40ad779f6c7699d948eabdcd9efc3f",
     "src/titleBlock.js": "edf7519a883d647e2f6da48dbf4f236c8dd4ae04914f8f5ff1e9ae517f3506de",
-    "src/toolInfo.js": "6f1eb79469d11df6a817e7597814c2b51ec9f074a54aa3f88f1669147a925f9c",
+    "src/toolInfo.js": "cd2dbb88c1ec2b6d20bb2f0ae97025c22d13a20a5ccf34b930b40549e2327d13",
     "src/viewTransform.js": "8cd318f8dc2dc3a60e4be71ffee287132032ecc68699a3094f8aa0a726fd1b1a",
-    "scripts/capture-help.mjs": "7adc702a587e876bd5d62ed5427727b832f0f62b4d6aced164bf80df99290c3f"
+    "scripts/capture-help.mjs": "48906c939a56a732fa258734808e7e3e4458120e0bd135ec1fe122b25fe5a465"
   }
 }
