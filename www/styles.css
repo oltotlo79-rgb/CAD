@@ -98,6 +98,12 @@ input:disabled, select:disabled { opacity: 0.4; }
 /* 題名・欄・ボタンは縮めず、狭いときは右の説明文だけが折り返す */
 #np-title, #np-fields, #num-draw { flex-shrink: 0; white-space: nowrap; }
 #numpanel .hint { color: #888; margin-left: auto; }
+/* 原点設定の欄: 今の原点の位置(枠の左下から) */
+#np-extra { display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
+#np-extra:empty { display: none; }
+/* 原点設定の時は、右端の一般的な案内を隠して1行に収める */
+#np-extra:not(:empty) ~ .hint { display: none; }
+.org-info { color: #bbb; }
 /* 状態表示(いちばん下) */
 #statusbar { padding: 4px 10px; background: #14161a; color: #9ab; font-family: Consolas, monospace; }
 

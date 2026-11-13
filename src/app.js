@@ -32,6 +32,7 @@ import {
   toolForKey, tooltipText, guideFor, toolAccepts,
 } from './toolInfo.js';
 import { buildContextMenu } from './menuModel.js';
+import { frameCornerReal, movedOrigin, originFromFrame, isOriginAtFrame } from './origin.js';
 import { createPopupMenu } from './popupMenu.js';
 import { createHelp, helpTopicForTool } from './helpView.js';
 import { projectionGuides, guideSnapCandidates } from './guides.js';
@@ -185,7 +186,8 @@ function currentGuides() {
 }
 // オブジェクトスナップ・ガイドスナップ優先、なければグリッドスナップ。
 // exclude: 吸着の相手にしない図形のid(つまみで形を変えている図形)
-function resolvePoint(s, { exclude = null } = {}) {
+// preferFeatures: 図形の角・端・中心などがあれば、投影ガイドの線より優先する(原点を決めるとき)
+function resolvePoint(s, { exclude = null, preferFeatures = state.tool === 'origin' } = {}) {
   const raw = screenToReal(s);
   const tolMm = 10 / pxPerRealMm();
   const centerMode = state.pen.shape.preset === 'center' && DRAW_TOOLS.includes(state.tool);
@@ -223,6 +225,10 @@ function resolvePoint(s, { exclude = null } = {}) {
     const leaderTip = (state.tool === 'leader' || state.tool === 'balloon') && !state.draft;
     const hit = findSnap(state.doc, raw, tolMm, vt.scaleK(state.doc.scale),
       { perimeterStepDeg: leaderTip ? 45 : null, exclude });
+    if (hit && preferFeatures) {
+      state.snapHint = hit;
+      return { x: hit.x, y: hit.y };
+    }
     if (hit) cands.push(hit);
   }
   if (state.projGuides) {
@@ -410,6 +416,7 @@ function buildFields(defs) {
       });
       label.append(mark);
     }
+    if (d.title) label.title = d.title; // マウスを乗せたときの説明
     label.append(cap, input);
     wrap.append(label);
   }
@@ -499,10 +506,16 @@ function editSchema(sel) {
 // 今の道具・選択に合わせて数値欄の中身を切り替える(変わったときだけ作り直す)
 function syncNumPanel() {
   const sel = state.tool === 'select' ? selectedEditable() : null;
-  const key = sel ? `${sel.type}:${sel.id}:${state.subSel ?? ''}` : `draw:${state.tool}`;
+  // 原点設定の欄は、原点が動いたら(元に戻すを含む)作り直して「今の原点」の表示を新しくする
+  const originKey = () => { const f = originFromFrame(state.doc); return `origin:${f.x},${f.y}`; };
+  const key = sel ? `${sel.type}:${sel.id}:${state.subSel ?? ''}`
+    : state.tool === 'origin' ? originKey() : `draw:${state.tool}`;
   if (key === lastPanelKey) return;
   lastPanelKey = key;
-  if (sel) {
+  el('np-extra').replaceChildren(); // 「移動」ボタンの右の追加部品(原点設定の時だけ使う)
+  if (state.tool === 'origin' && !sel) {
+    buildOriginPanel();
+  } else if (sel) {
     const schema = editSchema(sel);
     el('np-title').textContent = schema.title;
     buildFields(schema.fields);
@@ -516,6 +529,57 @@ function syncNumPanel() {
     buildFields(DRAW_FIELDS);
     el('num-draw').textContent = '作図';
   }
+}
+// 原点設定の数値欄: 今の原点から右へ・上へ動かす量と、「枠の左下に戻す」ボタン、今の原点の位置
+function buildOriginPanel() {
+  el('np-title').textContent = '原点の移動:';
+  buildFields([
+    { id: 'org-dx', label: '右へ', value: '0', title: '原点を右へ動かす長さ(mm)。左へはマイナス' },
+    { id: 'org-dy', label: '上へ', value: '0', title: '原点を上へ動かす長さ(mm)。下へはマイナス' },
+  ]);
+  el('num-draw').textContent = '移動';
+  const from = originFromFrame(state.doc);
+  const reset = Object.assign(document.createElement('button'), {
+    id: 'org-reset', type: 'button', textContent: '枠の左下に戻す',
+    title: '原点を、はじめの位置（用紙の枠の左下）に戻す',
+    disabled: isOriginAtFrame(state.doc),
+  });
+  reset.addEventListener('click', resetOrigin);
+  const info = Object.assign(document.createElement('span'), {
+    id: 'org-info', className: 'org-info',
+    textContent: `今の原点: 枠の左下から 右へ ${from.x.toFixed(2)}・上へ ${from.y.toFixed(2)} mm`,
+  });
+  el('np-extra').append(reset, info);
+}
+// 原点を p へ動かす(図形は動かない。元に戻す・やり直しができる)
+function setOrigin(p, message) {
+  commit(() => { state.doc.userOrigin = { x: p.x, y: p.y }; }, { follow: false });
+  if (message) showMessage(message);
+}
+// 数値欄の「右へ」「上へ」の量だけ原点を動かす(空の欄は0)
+function moveOriginFromInputs() {
+  const read = (id) => {
+    const text = el(id)?.value ?? '';
+    return text.trim() === '' ? 0 : parseNumber(text);
+  };
+  const dx = read('org-dx');
+  const dy = read('org-dy');
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+    showMessage('原点の移動: 数字を入れてください（左・下へ動かすときはマイナス）');
+    return;
+  }
+  if (dx === 0 && dy === 0) {
+    showMessage('原点の移動: 「右へ」「上へ」に動かす長さ(mm)を入れてください');
+    return;
+  }
+  setOrigin(movedOrigin(state.doc.userOrigin, dx, dy), `原点を右へ${dx}mm・上へ${dy}mm 動かしました（図形は動きません）`);
+  // 続けて動かせるように、欄を0に戻した「右へ」に入力できる状態にする
+  el('org-dx')?.focus();
+  el('org-dx')?.select();
+}
+// 原点を、はじめの位置(用紙の枠の左下)に戻す
+function resetOrigin() {
+  setOrigin(frameCornerReal(state.doc), '原点を枠の左下に戻しました');
 }
 // 画面下の状態表示(マウスの位置・方眼・縮尺・倍率・図形の数・案内)を更新する
 function updateStatus() {
@@ -1390,8 +1454,8 @@ function handleToolPointerDown(s, ev) {
     commitSettings(() => { state.doc.mirror45 = p; });
     setTool('select');
   } else if (state.tool === 'origin') {
-    commit(() => { state.doc.userOrigin = p; });
     setTool('select');
+    setOrigin(p, 'クリックした所を原点にしました（図形は動きません。Ctrl+Zで元に戻せます）');
   }
 }
 
@@ -1925,7 +1989,8 @@ function drawLineFromInputs() {
 function applyNumPanel() {
   const sel = state.tool === 'select' ? selectedEditable() : null;
   if (!sel) {
-    if (state.tool === 'polygon') drawPolygonFromInputs();
+    if (state.tool === 'origin') moveOriginFromInputs();
+    else if (state.tool === 'polygon') drawPolygonFromInputs();
     else drawLineFromInputs();
     return;
   }
@@ -2235,6 +2300,7 @@ function openCanvasMenu(s, ev) {
   const drafting = inProgress() ? (state.draft?.kind ?? 'pick') : null;
   popup.open(buildContextMenu({
     entities, hasClipboard: !!state.clipboard?.length, tool: state.tool, drafting,
+    originAtFrame: isOriginAtFrame(state.doc),
   }), ev.clientX, ev.clientY);
 }
 // 図形の種類 → 説明するツール(ヘルプの項目選び)
@@ -2279,6 +2345,14 @@ function runMenuAction(id) {
     case 'mirrorY': mirrorSelection('y'); break;
     case 'explode': explodeSelection(); break;
     case 'group': groupSelection(); break;
+    case 'originHere': {
+      // 右クリックした所(図形の角・中心などに吸着)を原点にする
+      const p = resolvePoint(menuScreen, { preferFeatures: true });
+      state.snapHint = null;
+      setOrigin(p, 'ここを原点にしました（図形は動きません。Ctrl+Zで元に戻せます）');
+      break;
+    }
+    case 'originReset': resetOrigin(); break;
     case 'dimOrient': setSelectedDimOrientation(arg); break;
     case 'lineType': applyStyleToSelection('lineType', arg); break;
     case 'width': applyStyleToSelection('width', arg === '' ? null : Number(arg)); break;
