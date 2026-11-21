@@ -1,7 +1,7 @@
-// 部品表(BOM)。表として1枚の図面上に自由配置する。
+// 部品表(BOM)。表を図面の上の好きな位置に置く
 import { annoTextMm, DIM_TEXT_MM } from './dims.js';
 
-// 列幅・行高さは用紙mm(文字高さ3.5mm時。文字高さに比例して表全体を拡縮する)
+// 列幅・行高さは用紙mm(文字高さ3.5mmのとき。文字高さに比例して表全体を拡縮する)
 export const BOM_COLS = [
   { field: 'no', label: '品番', widthMm: 12 },
   { field: 'name', label: '品名', widthMm: 45 },
@@ -19,7 +19,7 @@ export function bomLayout(e, k = 1) {
   const rowH = (BOM_ROW_H_MM * s) / k;
   const widths = BOM_COLS.map((c) => (c.widthMm * s) / k);
   const totalW = widths.reduce((a, b) => a + b, 0);
-  const totalH = rowH * (e.rows.length + 1); // +ヘッダ行
+  const totalH = rowH * (e.rows.length + 1); // 見出しの行の分を足す
   const rect = { x: e.x, y: e.y, width: totalW, height: totalH };
 
   const hLines = [];
@@ -48,13 +48,13 @@ export function bomLayout(e, k = 1) {
     });
   };
 
-  // ヘッダは最上段、行は上から順
+  // 見出しはいちばん上、行は上から順に並べる
   const headers = cellsFor(-1, e.y + totalH - rowH);
   const cells = [];
   for (let i = 0; i < e.rows.length; i++) {
     cells.push(...cellsFor(i, e.y + totalH - rowH * (i + 2)));
   }
-  // セル内の文字(左詰め・上下中央)
+  // マスの中の文字(左寄せ・上下は真ん中)
   const pad = (1.5 * s) / k;
   const textH = textMm / k;
   const texts = [...headers, ...cells].map((cell) => ({

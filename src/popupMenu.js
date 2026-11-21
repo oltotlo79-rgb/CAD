@@ -1,5 +1,5 @@
 // 右クリックメニューの表示(項目の中身は menuModel.js が決める)。
-// 子項目を持つ行はマウスを乗せると右側に子メニューを開く。
+// 子項目を持つ行はマウスを乗せると右側に子メニューを開く
 export function createPopupMenu(onSelect) {
   let root = null;
 
@@ -17,7 +17,7 @@ export function createPopupMenu(onSelect) {
     }
   }
 
-  // 画面からはみ出さないように位置を調整
+  // 画面からはみ出さないように位置を直す
   function place(menu, x, y, flipX) {
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
@@ -79,7 +79,7 @@ export function createPopupMenu(onSelect) {
       close();
       root = [];
       build(items, clientX, clientY, clientX, 0);
-      // 開いたときの右クリック自体で閉じないよう、次の操作から外側クリックを監視
+      // 開いたときの右クリックそのもので閉じないよう、次の操作から外側のクリックを見張る
       setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0);
     },
     close,

@@ -59,5 +59,5 @@ test('toolAccepts: そのツールでクリックできる図形だけを対象�
   assert.ok(toolAccepts('offset', circle) && !toolAccepts('offset', { type: 'text' }));
   assert.ok(toolAccepts('dia', arc) && !toolAccepts('dia', line));
   assert.ok(toolAccepts('hatch', closedPoly) && !toolAccepts('hatch', openPoly));
-  assert.ok(!toolAccepts('line', line)); // 作図ツールでは強調しない
+  assert.ok(!toolAccepts('line', line)); // 作図の道具では強調しない
 });

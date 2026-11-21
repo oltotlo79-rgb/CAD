@@ -1,5 +1,5 @@
 // 選んだ図形の「つまみ」(グリップ)。端・角・辺の真ん中などの小さな四角をドラッグすると、
-// その点だけを動かして形を変える(直線を延ばす、四角の大きさを変える、寸法の補助線を動かす など)。
+// その点だけを動かして形を変える(直線を延ばす、四角の大きさを変える、寸法の補助線を動かす など)
 import { round6 } from './geometry.js';
 import { ellipsePoint, isEllipseArc } from './model.js';
 
@@ -91,7 +91,7 @@ export function gripAnchor(e, key) {
   return null;
 }
 
-// つまみ key を点 p へ動かして形を変える。変えられない(大きさが0になる等)なら false
+// つまみ key を点 p へ動かして形を変える。変えられない(大きさが0になるなど)なら false
 export function moveGrip(e, key, p) {
   const A = (q) => [r6(q.x), r6(q.y)];
   if (e.type === 'line') {

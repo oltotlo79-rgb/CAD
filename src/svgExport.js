@@ -1,5 +1,5 @@
-// SVGエクスポート(一次出力形式)。用紙実寸mmで出力する。
-// 印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
+// SVG の書き出し(印刷にも使う主な出力)。用紙の実際の大きさ(mm)で書き出す。
+// 印刷がオンのレイヤーだけを含める。方眼・投影ガイドは含めない
 import { paperDimensions, frameRect } from './papers.js';
 import { dashArrayMm, entitySegments, ellipsePoint, isEllipseArc } from './model.js';
 import { DIM_ARROW_MM, balloonLayout, annotationLayout } from './dims.js';
@@ -65,7 +65,7 @@ export function toSVG(doc) {
 
 // 線の色・太さ・破線の指定
 function strokeAttrs(e, doc) {
-  // 破線の間隔は図面ごとの設定(用紙上mm)
+  // 破線の間隔は図面ごとの設定(用紙mm)
   const dashMm = dashArrayMm(e.lineType, doc.dashPatterns);
   const dash = dashMm.length > 0 ? ` stroke-dasharray="${dashMm.join(' ')}"` : '';
   return `stroke="black" stroke-width="${strokeWidthMm(e)}" fill="none"${dash}`;
@@ -113,7 +113,7 @@ function entityToSVG(e, doc, k, X, Y) {
     const ey = Y(e.cy + e.r * Math.sin(e.endAngle * DEG));
     const rp = r2(e.r * k);
     const large = sweep > 180 ? 1 : 0;
-    // 実座標で反時計回り → y反転後のSVGでは sweep-flag 0
+    // 実寸の座標で左回り → 上下が逆のSVGでは sweep-flag 0
     return `<path d="M ${sx} ${sy} A ${rp} ${rp} 0 ${large} 0 ${ex} ${ey}" ${strokeAttrs(e, doc)}/>`;
   }
   if (e.type === 'text') {
@@ -154,7 +154,7 @@ function entityToSVG(e, doc, k, X, Y) {
   return '';
 }
 
-// 寸法・引出線・バルーンで共通の 線+円弧+矢印+文字 のSVG化
+// 寸法・引出線・バルーンに共通の、線・円弧・矢印・文字をSVGにする処理
 function svgDimParts(layout, k, X, Y, widthMm) {
   const parts = [];
   for (const [a, b] of layout.lines) {

@@ -32,12 +32,12 @@ export function snapToGrid(p, stepMm) {
   };
 }
 
-// 点pを中心cまわりに+90°(反時計回り)回転
+// 点 p を中心 c のまわりに +90°(左回り)回す
 export function rotate90Point(p, c) {
   return { x: round6(c.x - (p.y - c.y)), y: round6(c.y + (p.x - c.x)) };
 }
 
-// 線分ab×線分cd の交点(なければnull)
+// 線分 ab と線分 cd の交点(なければ null)
 export function segSegIntersection(a, b, c, d) {
   const r = { x: b.x - a.x, y: b.y - a.y };
   const s = { x: d.x - c.x, y: d.y - c.y };
@@ -49,7 +49,7 @@ export function segSegIntersection(a, b, c, d) {
   return { x: round6(a.x + t * r.x), y: round6(a.y + t * r.y) };
 }
 
-// 線分ab×円(中心c半径r) の交点列(0〜2個)
+// 線分 ab と円(中心 c・半径 r)の交点の一覧(0〜2個)
 export function segCircleIntersections(a, b, c, r) {
   const d = { x: b.x - a.x, y: b.y - a.y };
   const f = { x: a.x - c.x, y: a.y - c.y };
@@ -70,7 +70,7 @@ export function segCircleIntersections(a, b, c, r) {
   return out;
 }
 
-// 半直線(origin+t*dir, t>=0)×線分cd。交点のt(dir単位)を返す。なければnull
+// 半直線(origin + t*dir、t>=0)と線分 cd の交点の t(dir の長さを1とする)を返す。なければ null
 export function raySegIntersection(origin, dir, c, d) {
   const s = { x: d.x - c.x, y: d.y - c.y };
   const denom = dir.x * s.y - dir.y * s.x;
@@ -81,7 +81,7 @@ export function raySegIntersection(origin, dir, c, d) {
   return t;
 }
 
-// 半直線×円。交点のt列(t>=0)を返す
+// 半直線と円の交点の t の一覧(t>=0)を返す
 export function rayCircleIntersections(origin, dir, c, r) {
   const f = { x: origin.x - c.x, y: origin.y - c.y };
   const A = dir.x * dir.x + dir.y * dir.y;
@@ -94,7 +94,7 @@ export function rayCircleIntersections(origin, dir, c, r) {
   return [(-B - disc) / (2 * A), (-B + disc) / (2 * A)].filter((t) => t > 1e-9);
 }
 
-// Catmull-Romスプラインの標本点列(制御点を通る滑らかな曲線)
+// Catmull-Rom スプラインの細かな点の並び(指定した点を通るなめらかな曲線)
 export function catmullRomPoints(points, closed, samples = 12) {
   const pts = points.map(([x, y]) => ({ x, y }));
   if (pts.length < 3) return pts;

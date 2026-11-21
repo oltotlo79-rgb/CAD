@@ -1,4 +1,4 @@
-// 圧縮前後のHTMLをfile://で開き、全ヘルプのDOM・画像・画面を比較する。
+// 圧縮前後のHTMLをfile://で開き、全ヘルプのDOM・画像・画面を比較する
 import { chromium } from 'playwright';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -96,7 +96,7 @@ try {
     await page.locator('#help input').fill('存在しない語句');
     assert.equal(await page.locator('.help-article h1').innerText(),'見つかりませんでした');
     await page.keyboard.press('Escape');
-    // 道具を使っているときはF1でその説明を直接開く。
+    // 道具を使っているときはF1でその説明を直接開く
     await page.locator('[data-tool="circle"]').click();await page.keyboard.press('F1');
     assert.equal(await page.locator('.help-article h1').innerText(),'円を描く');
     await page.locator('.help-window').screenshot({path:path.join(output,`${file}-circle.png`)});

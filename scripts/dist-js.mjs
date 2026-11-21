@@ -1,4 +1,4 @@
-// 配布HTMLに埋め込む JavaScript の加工。build.mjs と、配布物の検査(テスト・check-html)で共用する。
+// 配布HTMLに埋め込む JavaScript の加工。build.mjs と、配布物の検査(テスト・check-html)で共用する
 import { transform } from 'esbuild';
 
 // HTMLに直接書き込むので、スクリプトを途中で終わらせる `</script` と、

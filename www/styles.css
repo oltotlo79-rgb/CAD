@@ -64,7 +64,7 @@ input:disabled, select:disabled { opacity: 0.4; }
   display: grid; grid-template-columns: auto auto auto; gap: 4px 12px; align-items: center;
 }
 #layer-list .head { color: #889; font-size: 11px; }
-/* 復元の案内(黄色い帯) */
+/* ===== 復元の案内(黄色い帯) ===== */
 #restore-banner {
   display: none; gap: 10px; align-items: center;
   padding: 6px 10px; background: #6b5300; color: #ffe9a8;
@@ -98,16 +98,16 @@ input:disabled, select:disabled { opacity: 0.4; }
 /* 題名・欄・ボタンは縮めず、狭いときは右の説明文だけが折り返す */
 #np-title, #np-fields, #num-draw { flex-shrink: 0; white-space: nowrap; }
 #numpanel .hint { color: #888; margin-left: auto; }
-/* 原点設定の欄: 今の原点の位置(枠の左下から) */
+/* 原点設定のときに「移動」ボタンの右に足す部品(「初期位置に戻す」ボタンと今の原点の位置) */
 #np-extra { display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
 #np-extra:empty { display: none; }
-/* 原点設定の時は、右端の一般的な案内を隠して1行に収める */
+/* 原点設定のときは、右端の一般的な案内を隠して1行に収める */
 #np-extra:not(:empty) ~ .hint { display: none; }
 .org-info { color: #bbb; }
-/* 状態表示(いちばん下) */
+/* ===== 状態表示(いちばん下) ===== */
 #statusbar { padding: 4px 10px; background: #14161a; color: #9ab; font-family: Consolas, monospace; }
 
-/* カーソル横の操作ガイド */
+/* ===== カーソル横の操作ガイド ===== */
 #cursor-tip {
   position: absolute; z-index: 7; pointer-events: none; white-space: nowrap;
   padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 1.5;
@@ -115,7 +115,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 }
 #cursor-tip .values { color: #9fd0ff; font-family: Consolas, monospace; }
 
-/* 右クリックメニュー */
+/* ===== 右クリックメニュー ===== */
 .popup-menu {
   position: fixed; z-index: 50; min-width: 200px; padding: 4px 0;
   background: #262a30; border: 1px solid #555; border-radius: 5px;
@@ -132,8 +132,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 .popup-menu .item:hover .key { color: #dde; }
 .popup-menu .sep { height: 1px; margin: 4px 0; background: #444; }
 
-/* ヘルプ(明るい配色で読みやすく) */
-/* ===== ヘルプの画面: 画面全体を暗くして、その上に白い窓を出す ===== */
+/* ===== ヘルプの画面(明るい配色で読みやすく): 画面全体を暗くして、その上に白い窓を出す ===== */
 #help {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.45);

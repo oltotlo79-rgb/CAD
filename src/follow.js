@@ -1,7 +1,7 @@
 // 寸法・引出線・バルーン・粗さ記号・ハッチ・中心線を、くっついている図形の変更に追従させる。
 // 編集の前の図形(before)と編集の後(doc)を比べ、形が変わった図形の
 // 「端・真ん中・中心」や「線の上の同じ位置」にぴったり付いていた点を、新しい位置へ移す。
-// 付いているかどうかは座標の一致で調べるので、これまでに描いた図面にもそのまま効く。
+// 付いているかどうかは座標の一致で調べるので、これまでに描いた図面にもそのまま効く
 import { entitySegments, ellipsePoint, isEllipseArc } from './model.js';
 import { boundaryFromEntity } from './hatch.js';
 import {
@@ -68,7 +68,7 @@ function features(e) {
 // 図形の特徴点のうち、名前(key)が同じもの
 const featureOf = (e, key) => features(e).find((f) => f.key === key) ?? null;
 
-// 点 p が図形の線の上にあれば、その位置(線分の番号と割合、円の角度、楕円のパラメータ)
+// 点 p が図形の線の上にあれば、その位置(線分の番号と割合、円の角度、楕円の上の位置を表す角度)
 function curveParam(e, p) {
   if (e.type === 'line' || e.type === 'rect' || e.type === 'polyline') {
     const segs = entitySegments(e);

@@ -1,4 +1,5 @@
 // 座標の変換: 実寸(mm) ⇔ 用紙の上(mm、縮尺をかけた大きさ) ⇔ 画面(px)。拡大・縮小と全体表示の計算もここ
+
 // 縮尺の倍率(1:2 なら 0.5)
 export function scaleK(scale) {
   return scale.ratio[0] / scale.ratio[1];

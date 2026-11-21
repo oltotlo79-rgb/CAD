@@ -2,7 +2,7 @@
 // helpContent.js の本文に、図と確認の欄を組み込んで完成版にする
 import { HELP_SCREENSHOTS } from './helpScreenshots.js';
 
-// 手順・結果・困った場合を全項目で用意し、実画面の図と結び付ける。
+// 手順・結果・困った場合を全項目で用意し、実画面の図と結び付ける
 export const HELP_DETAILS = {
   intro: {
     path: '起動直後の画面。右上の「？ ヘルプ」からいつでも確認できます。',
@@ -394,7 +394,7 @@ export function completeHelpTopic(topic) {
   if (!detail) throw new Error(`ヘルプの詳細がありません: ${topic.id}`);
   let index=0;
   const used = new Set();
-  // 既存の図の位置に実画面を置き、追加の操作段階を最後にまとめる。
+  // 既存の図の位置に実画面を置き、追加の操作段階を最後にまとめる
   let html=topic.html.replace(/<!--help-figure(?::([\w,-]+))?-->/g, (match, names) => {
     const keys = names ? names.split(',') : [detail.shots[index++]];
     return keys.map(key => {

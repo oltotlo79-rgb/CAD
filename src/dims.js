@@ -2,13 +2,13 @@
 // 画面の描画とSVG出力(印刷)の両方がこの計算を使う。後から向き・寸法線の位置を直す関数もここ
 import { distance, angleDegOf } from './geometry.js';
 
-// 寸法の描画定数。すべて用紙上mm(縮尺に依存しない)
+// 寸法を描くときの決まった大きさ。すべて用紙mm(縮尺に依存しない)
 export const DIM_TEXT_MM = 3.5;   // 文字高さの既定値
 export const DIM_ARROW_MM = 3;    // 矢印長さ
 export const DIM_EXT_MM = 2;      // 寸法補助線の突き出し
 export const DIM_GAP_MM = 1;      // 文字と寸法線の間隔
 
-// 注記(寸法・引出線・記号・バルーン・部品表)の文字高さ。要素ごとに textMm で変えられる
+// 注記(寸法・引出線・記号・バルーン・部品表)の文字高さ。図形ごとに textMm で変えられる
 export function annoTextMm(e) {
   const v = Number(e.textMm);
   return v > 0 ? v : DIM_TEXT_MM;
@@ -38,7 +38,7 @@ export function dimText(e) {
   return '';
 }
 
-// 長さ寸法の寸法線の向き(単位ベクトル)。値のずれ textShift はこの向きの実寸mm
+// 長さ寸法の寸法線の向き(長さ1の向き)。値のずれ textShift はこの向きの実寸mm
 export function dimAxis(e) {
   if (e.orient === 'h') return { x: 1, y: 0 };
   if (e.orient === 'v') return { x: 0, y: 1 };
@@ -82,7 +82,7 @@ function angleSweep(e) {
   return a2 - a1;
 }
 
-// 表面粗さ記号(チェックマーク形状+値)
+// 表面粗さ記号(チェックマークの形と値)
 export function roughnessLayout(e, k = 1) {
   const textMm = annoTextMm(e);
   const h = (5 * textMm) / DIM_TEXT_MM / k; // 記号高さ(文字3.5mmで用紙5mm)
@@ -103,7 +103,7 @@ export function roughnessLayout(e, k = 1) {
   };
 }
 
-// 幾何公差の公差記入枠(セルを横に並べた箱)。枠は文字高さに比例
+// 幾何公差の公差記入枠(マスを横に並べた箱)。枠は文字高さに比例
 export function fcfLayout(e, k = 1) {
   const textMm = annoTextMm(e);
   const s = textMm / DIM_TEXT_MM;
@@ -131,7 +131,7 @@ export function fcfLayout(e, k = 1) {
   return { lines, arrows: [], texts, textMm };
 }
 
-// 注記系エンティティの共通レイアウト取得
+// 注記(寸法・引出線・記号・バルーン)の配置を、種類に合わせて計算する
 export function annotationLayout(e, k = 1) {
   if (e.type === 'dim' || e.type === 'leader') return dimLayout(e, k);
   if (e.type === 'roughness') return roughnessLayout(e, k);
@@ -139,7 +139,7 @@ export function annotationLayout(e, k = 1) {
   return null;
 }
 
-export const BALLOON_R_MM = 4; // バルーン円の半径(用紙mm、文字3.5mm時。文字に比例)
+export const BALLOON_R_MM = 4; // バルーン円の半径(用紙mm、文字3.5mmのとき。文字に比例)
 
 // バルーン(部品番号)のレイアウト。円+番号+対象への引出線
 export function balloonLayout(e, k = 1) {
@@ -165,8 +165,8 @@ export function balloonLayout(e, k = 1) {
   };
 }
 
-// 寸法・引出線の構成要素(実寸mm座標)を計算する。
-// k は縮尺係数。文字・矢印・突き出しは用紙mm基準なので実寸へ換算する。
+// 寸法・引出線を形づくる線・矢印・文字(実寸mmの座標)を計算する。
+// k は縮尺の倍率。文字・矢印・突き出しは用紙mm基準なので実寸へ換算する。
 // 戻り値: { lines: [[a,b],...], arrows: [{at,angleDeg}], texts: [{x,y,content,angleDeg,align}],
 //          textMm(文字高さ・用紙mm) }
 export function dimLayout(e, k = 1) {
@@ -298,7 +298,7 @@ export function dimLayout(e, k = 1) {
     lines.push([v, at(a1, r + ext)]);
     lines.push([v, at(a2, r + ext)]);
     const arcs = [{ c: v, r, startDeg: a1, endDeg: a2 }];
-    arrows.push({ at: at(a1, r), angleDeg: a1 - 90 }); // 弧の接線方向
+    arrows.push({ at: at(a1, r), angleDeg: a1 - 90 }); // 弧に接する向き
     arrows.push({ at: at(a2, r), angleDeg: a2 + 90 });
     const mid = (a1 + a2) / 2;
     const tp = at(mid, r + gap + textH * 0.5);
@@ -324,7 +324,7 @@ export function dimLayout(e, k = 1) {
   return { lines, arrows, texts, textMm };
 }
 
-// ---- 長さ寸法の寸法線の位置と向き(後から直す) ----
+// ===== 長さ寸法の寸法線の位置と向き(後から直す) =====
 const EPS = 1e-9;
 // 小数6桁に丸める(-0 は 0 にする)
 const r6 = (v) => Math.round(v * 1e6) / 1e6 || 0;

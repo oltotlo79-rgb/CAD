@@ -1,13 +1,13 @@
-// 線の太さ・文字高さ(いずれも用紙mm)。要素ごとに widthMm / textMm で上書きでき、
-// 未指定の要素は種類・線種ごとの既定値で描く。
+// 線の太さ・文字高さ(どちらも用紙mm)。図形ごとに widthMm・textMm で変えられ、
+// 指定のない図形は種類・線種ごとの決まった値で描く
 import { LINE_STYLES, STYLE_PRESETS } from './model.js';
 import { DIM_TEXT_MM, annoTextMm } from './dims.js';
 
-// UIの選択肢(JIS Z 8114 の線の太さ / JIS Z 8313 の文字高さ の系列)
+// メニューの選択肢(JIS Z 8114 の線の太さ・JIS Z 8313 の文字高さの系列)
 export const WIDTH_CHOICES_MM = [0.13, 0.18, 0.25, 0.35, 0.5, 0.7, 1, 1.4];
 export const TEXT_CHOICES_MM = [1.8, 2.5, 3.5, 5, 7, 10, 14, 20];
 
-// 線が細線固定の注記系 / 文字を持つ注記系
+// 線がいつも細線の注記と、文字を持つ注記
 const THIN_ANNOTATIONS = ['dim', 'leader', 'balloon', 'roughness', 'fcf', 'hatch'];
 const TEXT_ANNOTATIONS = ['dim', 'leader', 'balloon', 'roughness', 'fcf', 'bom'];
 
@@ -46,7 +46,7 @@ export function hasText(e) {
   return e.type === 'text' || TEXT_ANNOTATIONS.includes(e.type);
 }
 
-// 要素に指定された太さ。未指定・不正値は null(=標準)
+// 図形に指定された太さ。指定がない・正しくない値なら null(=標準)
 export function widthSettingMm(e) {
   const n = Number(e.widthMm);
   return n > 0 ? n : null;
@@ -61,14 +61,14 @@ export function strokeWidthMm(e) {
   return (LINE_STYLES[e.lineType] ?? LINE_STYLES.solid).widthMm;
 }
 
-// 文字を持たない要素は null
+// 文字を持たない図形は null
 export function textHeightMm(e) {
   if (e.type === 'text') return e.height;
   if (TEXT_ANNOTATIONS.includes(e.type)) return annoTextMm(e);
   return null;
 }
 
-// mm=null で標準(既定の太さ)に戻す。線を持たない要素は変更せず false
+// mm=null で標準(既定の太さ)に戻す。線を持たない図形は変えずに false
 export function applyWidth(e, mm) {
   if (!hasStroke(e)) return false;
   if (mm == null) delete e.widthMm;
@@ -76,7 +76,7 @@ export function applyWidth(e, mm) {
   return true;
 }
 
-// 文字を持たない要素は変更せず false(矩形の height は形状なので触らない)
+// 文字を持たない図形は変えずに false(矩形の height は形なので触らない)
 export function applyTextHeight(e, mm) {
   if (e.type === 'text') {
     e.height = mm;
@@ -88,7 +88,7 @@ export function applyTextHeight(e, mm) {
   return true;
 }
 
-// 値が揃っていれば {value}、違えば {mixed:true}、要素なしは null
+// 値が揃っていれば {value}、違えば {mixed:true}、図形がなければ null
 export function commonValue(entities, getter) {
   if (entities.length === 0) return null;
   const first = getter(entities[0]);
