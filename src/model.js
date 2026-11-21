@@ -13,7 +13,7 @@ import { boundaryBBox, pointInBoundary, translateBoundary } from './hatch.js';
 import { bomLayout } from './bom.js';
 import { nextGroupId, renumberGroups } from './groups.js';
 
-// 線種ごとの描画スタイル。太さは用紙上mm(縮尺に依存しない)。破線の間隔は図面ごとの dashPatterns
+// 線種ごとの描き方。太さは用紙mm(縮尺に依存しない)。破線の間隔は図面ごとの dashPatterns
 export const LINE_STYLES = {
   solid:  { widthMm: 0.5 },
   dashed: { widthMm: 0.35 },
@@ -22,7 +22,7 @@ export const LINE_STYLES = {
   thin:   { widthMm: 0.25 },
 };
 
-// 破線(かくれ線)・一点鎖線(中心線)・二点鎖線(想像線)の線の長さ・隙間・短い線の長さ(用紙上mm)。
+// 破線(かくれ線)・一点鎖線(中心線)・二点鎖線(想像線)の線の長さ・隙間・短い線の長さ(用紙mm)。
 // 図面ごとに変えられ、画面・印刷・SVGに使う
 export const DEFAULT_DASH_PATTERNS = {
   dashed: { dash: 3, gap: 1.5 },
@@ -34,7 +34,7 @@ export function copyDashPatterns(patterns = DEFAULT_DASH_PATTERNS) {
   return Object.fromEntries(Object.entries(DEFAULT_DASH_PATTERNS)
     .map(([type, base]) => [type, { ...base, ...patterns?.[type] }]));
 }
-// 線種の破線の並び(用紙上mm)。実線は []
+// 線種の破線の並び(用紙mm)。実線は []
 export function dashArrayMm(lineType, patterns = DEFAULT_DASH_PATTERNS) {
   const p = { ...DEFAULT_DASH_PATTERNS[lineType], ...patterns?.[lineType] };
   if (lineType === 'dashed') return [p.dash, p.gap];
@@ -48,7 +48,7 @@ export function parseDashValue(text) {
   return v > 0 && v <= 50 ? v : null;
 }
 
-// 線種UIプリセット → lineType と配置レイヤー
+// 線種メニューの項目 → lineType と置くレイヤー
 export const STYLE_PRESETS = {
   outline: { label: '外形線',   lineType: 'solid',  layer: 'outline' },
   hidden:  { label: 'かくれ線', lineType: 'dashed', layer: 'hidden' },
@@ -84,7 +84,7 @@ export function createDocument({ paperSize = 'A4', orientation = 'landscape' } =
     scale: { ratio: [1, 1] },
     userOrigin: { x: FRAME_MARGIN_MM, y: FRAME_MARGIN_MM },
     grid: { mode: 'auto', manualMm: 1 },
-    mirror45: null, // 45°ミラー線の通過点 {x,y}(実寸mm)。nullなら未設定
+    mirror45: null, // 45°ミラー線が通る点 {x,y}(実寸mm)。null なら未設定
     titleBlock: { fields: titleFields },
     layers: DEFAULT_LAYERS.map((l) => ({ ...l })),
     dashPatterns: copyDashPatterns(),
@@ -155,11 +155,11 @@ export function translateEntities(doc, ids, dx, dy) {
 }
 
 // 座標を小数6桁に丸める
-const r6 = (v) => round6(v) || 0; // -0 を +0 に正規化
+const r6 = (v) => round6(v) || 0; // -0 を +0 にそろえる
 // 角度を 0〜360° の範囲にする
 const norm360 = (a) => ((a % 360) + 360) % 360;
 
-// 選択要素を center まわりに +90°(反時計回り)回転する
+// 選んだ図形を center のまわりに +90°(左回り)回す
 export function rotate90Entities(doc, ids, center) {
   rotateEntities(doc, ids, center, 90);
 }
@@ -176,7 +176,7 @@ function keepDimShift(e, transform, vecMap) {
   e.textShift = r6(vx * u1.x + vy * u1.y);
 }
 
-// 選択要素を center まわりに deg 度(反時計回り正)回転する。
+// 選んだ図形を center のまわりに deg 度(左回りがプラス)回す。
 // 注記の記号(粗さ・公差枠・部品表)は向きを保ったまま位置だけ回す
 export function rotateEntities(doc, ids, center, deg) {
   const target = new Set(ids);
@@ -196,7 +196,7 @@ export function rotateEntities(doc, ids, center, deg) {
       [e.x1, e.y1] = pt(e.x1, e.y1);
       [e.x2, e.y2] = pt(e.x2, e.y2);
     } else if (e.type === 'rect') {
-      // 剛体回転: 左下角(回転の基準)を回して rotation を加算
+      // 形を変えずに回す: 左下の角(回転の基準)を回して rotation に足す
       [e.x, e.y] = pt(e.x, e.y);
       e.rotation = norm360((e.rotation ?? 0) + deg);
     } else if (e.type === 'polyline' || e.type === 'spline' || e.type === 'leader') {
@@ -275,7 +275,7 @@ function rotateLinearDim(e, pt, vec, deg, quarter) {
   const [x1, y1] = e.p1;
   const [x2, y2] = e.p2;
   if (e.orient === 'aligned') {
-    e.p1 = pt(x1, y1); e.p2 = pt(x2, y2); // offset は寸法線の法線方向なので不変
+    e.p1 = pt(x1, y1); e.p2 = pt(x2, y2); // offset は寸法線に直角な向きの離れなので変わらない
     return;
   }
   const h = e.orient === 'h';
@@ -290,7 +290,7 @@ function rotateLinearDim(e, pt, vec, deg, quarter) {
     e.offset = nowH ? dy : dx;
     return;
   }
-  // 斜めになる水平/垂直寸法は平行寸法にする。2点目は測る向きへの足
+  // 斜めになる水平・垂直寸法は平行寸法にする。2点目は測る向きへの足
   // (水平なら (x2,y1)) に置き換えて、測っている長さを保つ
   const foot = h ? [x2, y1] : [x1, y2];
   const p1 = pt(x1, y1);
@@ -304,7 +304,7 @@ function rotateLinearDim(e, pt, vec, deg, quarter) {
   e.offset = r6((dx - p1[0]) * nx + (dy - p1[1]) * ny);
 }
 
-// 選択要素を center を基準に f 倍する。文字・記号の大きさ(用紙mm)は変えない
+// 選んだ図形を、center を基準に f 倍する。文字・記号の大きさ(用紙mm)は変えない
 export function scaleEntities(doc, ids, center, f) {
   const target = new Set(ids);
   const pt = (x, y) => [r6(center.x + (x - center.x) * f), r6(center.y + (y - center.y) * f)];
@@ -386,7 +386,7 @@ export function entitySegments(e) {
     return [[{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]];
   }
   if (e.type === 'rect') {
-    // rotation は左下角(x,y)を中心とした回転
+    // rotation は左下の角(x,y)を中心にした回転
     const rot = ((e.rotation ?? 0) * Math.PI) / 180;
     const c = Math.cos(rot);
     const s = Math.sin(rot);
@@ -410,23 +410,23 @@ export function entitySegments(e) {
   return [];
 }
 
-// 選択要素を鏡映反転する。axis='x'は左右反転(x=center.xの縦軸)、'y'は上下反転
+// 選んだ図形を反転する。axis='x' は左右反転(x=center.x の縦の線で折り返す)、'y' は上下反転
 export function mirrorEntities(doc, ids, axis, center) {
   const target = new Set(ids);
   const mx = (x) => 2 * center.x - x;
   const my = (y) => 2 * center.y - y;
   const mp = (x, y) => (axis === 'x' ? [mx(x), y] : [x, my(y)]);
-  // 円弧などの角度: 左右反転はθ→180-θ、上下反転はθ→-θ(掃引の向きを保つためstart/endを入替)
+  // 円弧などの角度: 左右反転は θ→180-θ、上下反転は θ→-θ(弧を描く向きを保つため start と end を入れ替える)
   const mAngles = (start, end) => (axis === 'x'
     ? [180 - end, 180 - start]
-    : [-end || 0, -start || 0]); // `|| 0` は -0 を +0 に正規化
+    : [-end || 0, -start || 0]); // `|| 0` は -0 を +0 にそろえる
   for (const e of doc.entities) {
     if (!target.has(e.id)) continue;
     if (e.type === 'line') {
       [e.x1, e.y1] = mp(e.x1, e.y1);
       [e.x2, e.y2] = mp(e.x2, e.y2);
     } else if (e.type === 'rect') {
-      // 中心を鏡映し、回転角を反転(矩形は180°対称なので180-θ/-θで正しく写る)
+      // 中心を反転し、回転の角度を逆にする(矩形は180°回しても同じ形なので 180-θ・-θ で正しく写る)
       const rot0 = e.rotation ?? 0;
       const rad0 = rot0 * DEG;
       const cx0 = e.x + (e.width / 2) * Math.cos(rad0) - (e.height / 2) * Math.sin(rad0);
@@ -451,7 +451,7 @@ export function mirrorEntities(doc, ids, axis, center) {
       const rot0 = e.rotation ?? 0;
       e.rotation = (((axis === 'x' ? 180 - rot0 : -rot0) % 360) + 360) % 360;
       if (isEllipseArc(e)) {
-        // 鏡映でパラメータは u→-u(向き維持のため入替)
+        // 反転すると楕円の上の位置 u は -u になる(向きを保つため始まりと終わりを入れ替える)
         [e.startAngle, e.endAngle] = [-e.endAngle || 0, -e.startAngle || 0];
       }
     } else if (e.type === 'text') {
@@ -473,7 +473,7 @@ export function mirrorEntities(doc, ids, axis, center) {
         e.p2 = mp(e.p2[0], e.p2[1]);
         e.tail = mp(e.tail[0], e.tail[1]);
       } else if (e.dimType === 'angle') {
-        // 鏡映で回る向きが逆になるので、p1/p2 を入れ替えて同じ開きを測り続ける
+        // 反転で回る向きが逆になるので、p1/p2 を入れ替えて同じ開きを測り続ける
         e.vertex = mp(e.vertex[0], e.vertex[1]);
         [e.p1, e.p2] = [mp(e.p2[0], e.p2[1]), mp(e.p1[0], e.p1[1])];
       }
@@ -502,11 +502,11 @@ export function mirrorEntities(doc, ids, axis, center) {
 
 const DEG = Math.PI / 180;
 
-// ---- 楕円(回転・楕円弧対応)のヘルパー ----
+// ===== 楕円の計算(回転・楕円弧にも対応) =====
 export function isEllipseArc(e) {
   return e.startAngle != null && e.endAngle != null;
 }
-// 点pを楕円のローカル座標(回転前)へ
+// 点 p を、楕円の回転前の向きの座標にする
 function ellipseLocal(e, p) {
   const rot = (e.rotation ?? 0) * DEG;
   const dx = p.x - e.cx;
@@ -515,7 +515,7 @@ function ellipseLocal(e, p) {
   const s = Math.sin(rot);
   return { x: dx * c + dy * s, y: -dx * s + dy * c };
 }
-// パラメータ角(度)の楕円上の点(回転込み)
+// 楕円の上の位置を表す角度(度)の点(回転も含める)
 export function ellipsePoint(e, paramDeg) {
   const rot = (e.rotation ?? 0) * DEG;
   const u = paramDeg * DEG;
@@ -526,7 +526,7 @@ export function ellipsePoint(e, paramDeg) {
   return { x: e.cx + lx * c - ly * s, y: e.cy + lx * s + ly * c };
 }
 
-// ---- 連続線/スプラインのセグメント編集 ----
+// ===== 連続線・スプラインの線分1本ずつの編集 =====
 export function polySegmentCount(e) {
   return e.closed ? e.points.length : e.points.length - 1;
 }
@@ -537,7 +537,7 @@ export function polySegmentInfo(e, i) {
   const end = { x: e.points[(i + 1) % n][0], y: e.points[(i + 1) % n][1] };
   return { start, len: distance(start, end), ang: angleDegOf(start, end) };
 }
-// セグメントiを 始点+長さ+角度 で更新(始点基準: 終点側の頂点が動く)
+// i 番目の線分を、始点・長さ・角度で直す(始点はそのままで、終点側の頂点が動く)
 export function setPolySegment(e, i, start, len, ang) {
   const n = e.points.length;
   const end = lineEndPoint(start, len, ang);
@@ -576,7 +576,7 @@ export function referencePoint(e, subSel = null) {
   return null;
 }
 
-// オブジェクトスナップの候補点(端点・中点・中心・四半点)
+// 図形の吸着の候補点(端・真ん中・中心・円周の上下左右の点)
 export function entitySnapPoints(e) {
   const pts = [];
   const push = (x, y, kind) => pts.push({ x, y, kind });
@@ -627,7 +627,7 @@ export function entitySnapPoints(e) {
   return pts;
 }
 
-// 実寸mmでのバウンディングボックス。kは縮尺係数(文字高さは用紙mmのため)
+// 図形を囲む四角(実寸mm)。k は縮尺の倍率(文字高さは用紙mmのため)
 export function entityBounds(e, k = 1) {
   if (e.type === 'hatch') return boundaryBBox(e.boundary);
   if (e.type === 'balloon') {
@@ -654,7 +654,7 @@ export function entityBounds(e, k = 1) {
     return { minX: e.cx - e.r, minY: e.cy - e.r, maxX: e.cx + e.r, maxY: e.cy + e.r };
   }
   if (e.type === 'ellipse') {
-    // 回転楕円の正確な軸平行バウンディング
+    // 回転した楕円をぴったり囲む、傾いていない四角
     const rot = (e.rotation ?? 0) * DEG;
     const c = Math.cos(rot);
     const s = Math.sin(rot);
@@ -685,7 +685,7 @@ export function entityBounds(e, k = 1) {
   return b;
 }
 
-// 点pが要素の線上(tolMm以内)にあるか
+// 点 p が図形の線の上(tolMm 以内)にあるか
 export function hitTestEntity(e, p, tolMm, k = 1) {
   if (e.type === 'hatch') {
     return pointInBoundary(e.boundary, p);
@@ -757,13 +757,13 @@ export function hitTestEntity(e, p, tolMm, k = 1) {
   return false;
 }
 
-// 非表示レイヤーの要素は見えない扱い(選択・スナップ・ヒットの対象外)。未知のレイヤーは見える
+// 非表示のレイヤーの図形は見えない扱い(選ぶ・吸着・クリックの対象にしない)。知らないレイヤーは見える
 export function isEntityVisible(doc, e) {
   const layer = doc.layers.find((l) => l.id === e.layer);
   return layer ? layer.visible !== false : true;
 }
 
-// 全角の数字・小数点・符号を半角に直す(日本語入力のまま打った値も受け付ける)
+// 全角の記号と、置き換える半角の記号(日本語入力のまま打った値も受け付けるため)
 const FULLWIDTH = { '．': '.', '－': '-', '−': '-', '＋': '+', '，': '' };
 // 全角の数字・記号を半角にする
 export function toHalfWidth(text) {

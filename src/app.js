@@ -75,7 +75,7 @@ const state = {
   dirty: false,
   tool: 'select',
   selection: new Set(),
-  subSel: null, // 連続線/スプラインの選択中セグメント番号
+  subSel: null, // 連続線・スプラインで選んでいる線分の番号
   draft: null,
   gridSnap: true,
   osnap: true,
@@ -84,14 +84,14 @@ const state = {
   show45: true,
   guides: { xs: [], ys: [] },
   spaceDown: false,
-  panDrag: null,   // { startScreen, startPanX, startPanY }
-  moveDrag: null,  // { lastReal, snapshotPushed }
-  filletFirst: null, // フィレット1本目 { line, click }
-  copyDrag: null,  // 右ドラッグ複製 { ids, startReal, current, bounds }
-  clipboard: null, // Ctrl+C の内部クリップボード(エンティティのプロパティ配列)
-  offsetPick: null, // オフセット1段階目で選んだ対象
-  message: null,   // ステータスバーの操作ガイド
-  midGuides: [],   // 中心線モードで表示する近傍の中点ガイド
+  panDrag: null,   // 画面を手で動かしている途中 { startScreen, startPanX, startPanY }
+  moveDrag: null,  // 図形をドラッグで動かしている途中 { lastReal, snapshotPushed }
+  filletFirst: null, // フィレットで1本目に選んだ直線 { line, click }
+  copyDrag: null,  // 右ドラッグで複製している途中 { ids, startReal, current, bounds }
+  clipboard: null, // Ctrl+C でコピーした図形(図形のデータの配列)
+  offsetPick: null, // オフセットで1回目に選んだ図形
+  message: null,   // 画面下の状態表示に出す案内
+  midGuides: [],   // 中心線モードで出す、マウスの近くの中心・真ん中の目印
   mouseReal: null,
   hover: null,       // マウスを乗せている(クリックできる)図形のid
   hoverGroup: null,  // 選択ツールでマウスを乗せた図形のまとまり(グループ番号)。全体を強調する
@@ -104,7 +104,7 @@ const state = {
   hoverGrip: null,   // マウスを乗せているつまみ
   rightPress: null,  // 右ボタンを押した画面位置(動かさずに離したらメニュー)
   showGuide: true,   // カーソル横の操作ガイド
-  // 次に作る図形の線種・線の太さ・文字高さ(用紙mm)。ツールの種類ごとに覚える(widthMm:null=標準)
+  // 次に作る図形の線種・線の太さ・文字高さ(用紙mm)。道具の種類ごとに覚える(widthMm:null=標準)
   pen: {
     shape: { preset: 'outline', widthMm: null },  // 直線・円などの図形
     text: { textMm: DIM_TEXT_MM },                // 文字
@@ -123,7 +123,7 @@ function showMessage(text) {
   updateStatus();
 }
 
-// ---- 座標ヘルパー ----
+// ===== 座標の変換 =====
 function eventScreen(ev) {
   const r = canvas.getBoundingClientRect();
   return { x: ev.clientX - r.left, y: ev.clientY - r.top };
@@ -149,14 +149,14 @@ function snapReal(p) {
 function originToAbs(p) {
   return { x: p.x + state.doc.userOrigin.x, y: p.y + state.doc.userOrigin.y };
 }
-// 中心線モード: カーソル近傍の線分の中点・円/楕円の中心をガイドとして集める
+// 中心線モードの目印を出す作図の道具と、目印を集めない図形の種類
 const DRAW_TOOLS = ['line', 'polyline', 'spline', 'rect', 'polygon', 'circle', 'arc', 'ellipse', 'earc'];
 const MID_GUIDE_SKIP = ['dim', 'leader', 'bom', 'balloon', 'hatch', 'text', 'roughness', 'fcf'];
 // 中心線モードで、マウスの近くの図形の中心・辺の真ん中を集める(吸着の目印にする)
 function centerMidGuides(cursor) {
   if (state.pen.shape.preset !== 'center' || !DRAW_TOOLS.includes(state.tool)) return [];
   const k = vt.scaleK(state.doc.scale);
-  const range = 60 / pxPerRealMm(); // カーソル周辺60px
+  const range = 60 / pxPerRealMm(); // マウスの周り60px
   const out = [];
   for (const e of state.doc.entities) {
     if (MID_GUIDE_SKIP.includes(e.type) || !isEntityVisible(state.doc, e)) continue;
@@ -177,22 +177,22 @@ function centerMidGuides(cursor) {
   return out;
 }
 
-// 選択要素からの投影ガイド(投影ガイドONのとき)
+// 選んだ図形からの投影ガイド(投影ガイドがオンのとき)
 function currentGuides() {
   if (!state.projGuides || state.selection.size === 0) return { xs: [], ys: [] };
   // つまみで形を変えている図形からは出さない(動かしている点そのものに吸い付いてしまうため)
   return projectionGuides(state.doc.entities.filter((e) =>
     state.selection.has(e.id) && e.id !== state.gripDrag?.id));
 }
-// オブジェクトスナップ・ガイドスナップ優先、なければグリッドスナップ。
+// 図形の点・ガイドへの吸着を優先し、なければ方眼に吸着する。
 // exclude: 吸着の相手にしない図形のid(つまみで形を変えている図形)
 // preferFeatures: 図形の角・端・中心などがあれば、投影ガイドの線より優先する(原点を決めるとき)
 function resolvePoint(s, { exclude = null, preferFeatures = state.tool === 'origin' } = {}) {
   const raw = screenToReal(s);
   const tolMm = 10 / pxPerRealMm();
   const centerMode = state.pen.shape.preset === 'center' && DRAW_TOOLS.includes(state.tool);
-  // 中心線モード: 中点そのもの、または中点を通る水平/垂直の軸ガイドに吸着。
-  // 軸上ならどこでも良い(=図形の外へはみ出して中心線を引ける)
+  // 中心線モード: 中点そのもの、または中点を通る水平・垂直の軸ガイドに吸着。
+  // 軸の上ならどこでもよい(=図形の外へはみ出して中心線を引ける)
   if (centerMode && state.midGuides.length > 0) {
     const tolMid = 12 / pxPerRealMm();
     const gridX = (pt) => (state.gridSnap && currentGridStep()
@@ -206,9 +206,9 @@ function resolvePoint(s, { exclude = null, preferFeatures = state.tool === 'orig
     }
     if (!best) {
       for (const m of state.midGuides) {
-        const dH = Math.abs(raw.y - m.y); // 水平軸: yを合わせxは自由(グリッド)
+        const dH = Math.abs(raw.y - m.y); // 水平の軸: y を合わせ、x は自由(方眼に吸着)
         if (dH <= bd) { best = { x: gridX(raw).x, y: m.y }; bd = dH; kind = 'guide'; }
-        const dV = Math.abs(raw.x - m.x); // 垂直軸: xを合わせyは自由(グリッド)
+        const dV = Math.abs(raw.x - m.x); // 垂直の軸: x を合わせ、y は自由(方眼に吸着)
         if (dV <= bd) { best = { x: m.x, y: gridX(raw).y }; bd = dV; kind = 'guide'; }
       }
     }
@@ -218,7 +218,7 @@ function resolvePoint(s, { exclude = null, preferFeatures = state.tool === 'orig
     }
   }
   const cands = [];
-  // 中心線モードでは端点・交点等への通常スナップを止める(角に吸われて
+  // 中心線モードでは端・交点などへのふだんの吸着を止める(角に吸われて
   // 図形の内側に閉じ込められるのを防ぐ)
   if (state.osnap && !centerMode) {
     // 引出線・バルーンの矢印の先(1点目)は、円・円弧の上下左右に加えて斜め45°の点にも吸い付く
@@ -258,14 +258,14 @@ function constrainByShift(p, shiftKey, anchor = shiftAnchor()) {
   if (q.x !== p.x || q.y !== p.y) state.snapHint = null; // 吸着の点から外れたので印を消す
   return q;
 }
-// 作図中の線種プリセット・太さ → エンティティ属性
+// 太さの指定があれば { widthMm }(標準の太さなら何も付けない)
 const widthProp = (pen) => (pen.widthMm ? { widthMm: pen.widthMm } : {});
 // これから描く図形の線種・レイヤー・太さ(作図の道具の設定から)
 function styleProps() {
   const preset = STYLE_PRESETS[state.pen.shape.preset] ?? STYLE_PRESETS.outline;
   return { lineType: preset.lineType, layer: preset.layer, ...widthProp(state.pen.shape) };
 }
-// 寸法・記号・部品表の属性(細線。太さ・文字高さは注記ツールの設定、3.5mmは既定なので省略)
+// 寸法・記号・部品表の線種・太さ・文字高さ(細線。太さ・文字高さは注記の道具の設定、3.5mmは既定なので省略)
 function annoProps(layer) {
   const { textMm } = state.pen.anno;
   return {
@@ -273,7 +273,7 @@ function annoProps(layer) {
     ...(textMm !== DIM_TEXT_MM ? { textMm } : {}),
   };
 }
-// 寸法の向きと配置: 2点が水平/垂直なら自動、斜めはカーソル位置で判定(Shiftで平行寸法)
+// 寸法の向きと配置: 2点が水平・垂直なら自動、斜めはカーソル位置で判定(Shiftで平行寸法)
 function dimPlacement(p1, p2, c, aligned) {
   const eps = 1e-6;
   let orient;
@@ -293,7 +293,7 @@ function dimPlacement(p1, p2, c, aligned) {
   return { orient, offset: (c.x - p1.x) * nx + (c.y - p1.y) * ny };
 }
 
-// ---- 描画・状態表示 ----
+// ===== 描画・状態表示 =====
 function render() {
   state.guides = currentGuides();
   // 図形を1つ選んで数値欄に値が出ているときは、X・Yがどの点かを図の上に示す
@@ -308,7 +308,8 @@ function render() {
   updateCursorTip();
 }
 
-// ---- つまみ(グリップ): 選んだ図形の端・角などの小さな四角。ドラッグでその点だけを動かす ----
+// ===== つまみ(グリップ) =====
+// 選んだ図形の端・角などの小さな四角。ドラッグでその点だけを動かす
 const GRIP_MAX_SELECTION = 30; // たくさん選んだときは画面が四角だらけにならないよう出さない
 // 今表示するつまみの一覧(選択ツールで図形を選んでいるときだけ)
 function currentGrips() {
@@ -351,9 +352,9 @@ function moveGripTo(s, shiftKey) {
   followEdits(before, state.doc);
 }
 
-// ---- 数値パネル(選択種別ごとの動的フィールド) §7 ----
+// ===== 数値欄(選んだ図形・道具に合わせて欄を作り直す) =====
 let lastPanelKey = null;
-let cancelPanelEdit = false; // Esc で欄を離れる時は、打ちかけの値を図形に反映しない
+let cancelPanelEdit = false; // Esc で欄を離れるときは、打ちかけの値を図形に反映しない
 // 欄を作り直している間か。入力中の欄を消すとブラウザが change を出すので、
 // それを反映すると Enter 1回で2回変更したことになり、元に戻すが2回必要になる
 let rebuildingPanel = false;
@@ -371,7 +372,7 @@ const DRAW_FIELDS = [
   { id: 'num-len', label: '長さ' },
   { id: 'num-ang', label: '角度', value: '0' },
 ];
-// 正多角形ツールの数値入力: 中心・大きさ・向き。大きさの欄の名前は、決め方を選ぶメニューを兼ねる
+// 正多角形の道具の数値入力: 中心・大きさ・向き。大きさの欄の名前は、決め方を選ぶメニューを兼ねる
 function polygonFields() {
   return [
     { id: 'num-x', label: '中心X' },
@@ -421,7 +422,7 @@ function buildFields(defs) {
     wrap.append(label);
   }
 }
-// 選択エンティティのパネル定義(タイトルとフィールド)
+// 選んだ図形の数値欄の中身(題名と欄の一覧)
 function editSchema(sel) {
   const o = state.doc.userOrigin;
   const F = (key, label, value) => ({ id: `np-${key}`, label, value });
@@ -512,7 +513,7 @@ function syncNumPanel() {
     : state.tool === 'origin' ? originKey() : `draw:${state.tool}`;
   if (key === lastPanelKey) return;
   lastPanelKey = key;
-  el('np-extra').replaceChildren(); // 「移動」ボタンの右の追加部品(原点設定の時だけ使う)
+  el('np-extra').replaceChildren(); // 「作図」ボタン(原点設定のときは「移動」)の右に足す部品(原点設定のときだけ使う)
   if (state.tool === 'origin' && !sel) {
     buildOriginPanel();
   } else if (sel) {
@@ -577,7 +578,7 @@ function moveOriginFromInputs() {
   el('org-dx')?.focus();
   el('org-dx')?.select();
 }
-// 原点を初期位置(はじめの位置＝用紙の枠の左下)に戻す。すでに初期位置なら、そう知らせるだけ
+// 原点を初期位置(はじめの位置=用紙の枠の左下)に戻す。すでに初期位置なら、そう知らせるだけ
 function resetOrigin() {
   if (isOriginAtFrame(state.doc)) {
     showMessage('原点はすでに初期位置（用紙の枠の左下）にあります');
@@ -609,7 +610,7 @@ function markDirty() {
   scheduleBackup();
 }
 
-// ---- クラッシュ復元用の自動スナップショット ----
+// ===== 異常終了に備えた自動の控え =====
 let backupTimer = null;
 // 2秒後にブラウザの中へ図面の控えを保存する(続けて変えたら最後の1回だけ)
 function scheduleBackup() {
@@ -623,7 +624,7 @@ function discardBackup() {
   clearTimeout(backupTimer);
   clearBackup().catch(() => {});
 }
-// 変更前スナップショットを積んでから mutator を実行する。
+// 変更する前の図面を履歴に積んでから mutator を実行する。
 // 図形の形を変えたら、くっついている寸法・引出線・中心線なども付いていく(follow:false で止める)
 function commit(mutator, { follow = true } = {}) {
   const before = snapshot(state.doc);
@@ -631,11 +632,11 @@ function commit(mutator, { follow = true } = {}) {
   mutator();
   if (follow) followEdits(JSON.parse(before).entities, state.doc);
   markDirty();
-  lastPanelKey = null; // 数値パネルを最新値で再同期
+  lastPanelKey = null; // 数値欄を新しい値に合わせ直す
   render();
 }
 
-// ---- キャンバスサイズ・ビュー ----
+// ===== キャンバスの大きさ・表示 =====
 // 画面に表示されているキャンバスの大きさ(小数まで。拡大表示の125%などでも正確に)
 function canvasCssSize() {
   const r = canvas.getBoundingClientRect();
@@ -657,7 +658,7 @@ function resizeCanvas() {
   canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.view) {
-    // 下の数値入力欄の高さが変わった(図形を選んで欄が増えた等)ときも、図が上下に跳ねないよう
+    // 下の数値入力欄の高さが変わった(図形を選んで欄が増えたなど)ときも、図が上下に跳ねないよう
     // 画面の上での位置を保つ(下端が上がった分だけ、表示の基準を上へずらす)
     const shift = lastCanvasBottom == null ? 0 : (lastCanvasBottom - bottom) / state.view.pxPerMm;
     state.view = { ...state.view, canvasWidth: w, canvasHeight: h, panY: state.view.panY + shift };
@@ -673,14 +674,14 @@ window.addEventListener('resize', resizeCanvas);
 // マウスの位置と図形の見た目がずれる(クリックした所と違う所が選ばれる)ので、必ず追従する
 new ResizeObserver(resizeCanvas).observe(canvas);
 
-// ---- パン・ズーム ----
-// スクロール=上下パン / Shift+スクロール・Ctrl+スクロール=拡大縮小
-// 左右の移動は横スクロールバー(またはチルトホイール/トラックパッド)
+// ===== 表示の移動(パン)・拡大縮小(ズーム) =====
+// スクロール=上下に移動、Shift+スクロール・Ctrl+スクロール=拡大縮小
+// 左右の移動は横スクロールバー(またはチルトホイール・トラックパッド)
 canvas.addEventListener('wheel', (ev) => {
   ev.preventDefault();
   const z = state.view.pxPerMm;
   if (ev.ctrlKey || ev.shiftKey) {
-    // Shift押下時はブラウザが deltaY を deltaX に振り替えることがある
+    // Shift を押しているときは、ブラウザが deltaY を deltaX に振り替えることがある
     const dy = ev.deltaY !== 0 ? ev.deltaY : ev.deltaX;
     const factor = dy < 0 ? 1.2 : 1 / 1.2;
     state.view = vt.zoomAt(state.view, eventScreen(ev), factor);
@@ -694,7 +695,7 @@ canvas.addEventListener('wheel', (ev) => {
   render();
 }, { passive: false });
 
-// ---- スクロールバー(用紙±半分の範囲と現在の表示範囲を合わせた世界で表示) ----
+// ===== スクロールバー(用紙とその周り半分ずつの範囲に、今の表示範囲を合わせた広さで表示) =====
 function scrollWorld() {
   const paper = paperDimensions(state.doc.paper.size, state.doc.paper.orientation);
   const v = state.view;
@@ -728,7 +729,7 @@ function updateScrollbars() {
   vth.style.height = `${thumbH}px`;
   vth.style.top = `${Math.max(0, Math.min(top, trackH - thumbH))}px`;
 }
-let sbDrag = null; // { axis, start, pan, mmPerPx }
+let sbDrag = null; // スクロールバーのつまみをドラッグしている途中 { axis, start, pan, mmPerPx }
 el('hthumb').addEventListener('pointerdown', (ev) => {
   ev.preventDefault();
   ev.stopPropagation();
@@ -737,7 +738,7 @@ el('hthumb').addEventListener('pointerdown', (ev) => {
     axis: 'x', start: ev.clientX, pan: state.view.panX,
     mmPerPx: (w.x1 - w.x0) / el('hscroll').clientWidth,
   };
-  try { ev.target.setPointerCapture(ev.pointerId); } catch { /* noop */ }
+  try { ev.target.setPointerCapture(ev.pointerId); } catch { /* 何もしない */ }
 });
 el('vthumb').addEventListener('pointerdown', (ev) => {
   ev.preventDefault();
@@ -747,7 +748,7 @@ el('vthumb').addEventListener('pointerdown', (ev) => {
     axis: 'y', start: ev.clientY, pan: state.view.panY,
     mmPerPx: (w.y1 - w.y0) / el('vscroll').clientHeight,
   };
-  try { ev.target.setPointerCapture(ev.pointerId); } catch { /* noop */ }
+  try { ev.target.setPointerCapture(ev.pointerId); } catch { /* 何もしない */ }
 });
 window.addEventListener('pointermove', (ev) => {
   if (!sbDrag) return;
@@ -759,7 +760,7 @@ window.addEventListener('pointermove', (ev) => {
   render();
 });
 window.addEventListener('pointerup', () => { sbDrag = null; });
-// トラックの空き部分クリックでその位置へジャンプ
+// スクロールバーの空いた所をクリックしたら、その位置へ表示を移す
 el('hscroll').addEventListener('pointerdown', (ev) => {
   if (ev.target !== el('hscroll')) return;
   const w = scrollWorld();
@@ -805,7 +806,7 @@ function movePan(s) {
   render();
 }
 
-// ---- ツールバーのタブ ----
+// ===== ツールバーのタブ =====
 function activateTab(name) {
   // 以前のバージョンで保存されたタブ名など、存在しないタブなら「作図」に戻す
   const panels = [...document.querySelectorAll('#ribbon .panel')];
@@ -819,7 +820,7 @@ function activateTab(name) {
 document.querySelectorAll('#tabs .tab').forEach((t) =>
   t.addEventListener('click', () => activateTab(t.dataset.tab)));
 
-// ---- ツール ----
+// ===== 道具の切り替え =====
 function setTool(tool) {
   state.tool = tool;
   state.draft = null;
@@ -831,7 +832,7 @@ function setTool(tool) {
   state.hoverGrip = null;
   document.querySelectorAll('#toolbar .tool').forEach((b) =>
     b.classList.toggle('active', b.dataset.tool === tool));
-  // キー操作で選んだツールも見えるよう、そのボタンがあるタブを開く
+  // キー操作で選んだ道具も見えるよう、そのボタンがあるタブを開く
   const panel = document.querySelector(`#ribbon .panel [data-tool="${tool}"]`)?.closest('.panel');
   if (panel) activateTab(panel.dataset.panel);
   render();
@@ -859,7 +860,7 @@ function commitRect(a, b) {
   }));
 }
 
-// ---- 正多角形(できあがりは閉じた連続線) ----
+// ===== 正多角形(できあがりは閉じた連続線) =====
 // 角数の欄の値。正しくなければ理由を表示して null
 function polygonSides() {
   const n = parseSides(el('polygon-sides').value);
@@ -880,7 +881,7 @@ function commitPolygon(center, size, angleDeg) {
     ...styleProps(),
   }));
 }
-// 作図中: マウスの位置から形を決め、プレビューと数値入力の欄に出す。
+// 作図中: マウスの位置から形を決め、描きかけの形と数値欄に出す。
 // 点スナップで吸い付いた点ならその点に合わせ、そうでなければ向きを15°刻みにする
 function updatePolygonDraft() {
   const d = state.draft;
@@ -924,7 +925,7 @@ function finishPolyline() {
   const d = state.draft;
   if (d?.kind !== 'polyline' && d?.kind !== 'spline') return;
   state.draft = null;
-  // 連続する同一点(ダブルクリック等)を除去
+  // 同じ点が続いていたら(ダブルクリックなど)1つにする
   const pts = d.points.filter((p, i) =>
     i === 0 || p.x !== d.points[i - 1].x || p.y !== d.points[i - 1].y);
   const minPts = d.kind === 'spline' ? 3 : 2;
@@ -936,7 +937,7 @@ function finishPolyline() {
     render();
   }
 }
-// 寸法値・文字・バルーン番号などの書き換え入力を開く
+// 値・文字を書き換えられる図形の種類
 const VALUE_EDITABLE = ['dim', 'leader', 'text', 'balloon', 'roughness', 'fcf'];
 // 寸法の値・文字・バルーンの番号などを書き換える入力欄を開く
 function openValueEditor(hit, s) {
@@ -968,7 +969,7 @@ canvas.addEventListener('dblclick', (ev) => {
       }
       return;
     }
-    // 表題欄のフィールド編集(bind項目は自動反映のため編集不可)
+    // 表題欄の項目を書き換える(尺度・用紙は図面の設定から自動で入るので書き換えられない)
     const tb = titleBlockLayout(state.doc);
     if (tb) {
       const pp = vt.screenToPaper(s, state.view);
@@ -988,7 +989,7 @@ canvas.addEventListener('dblclick', (ev) => {
   finishPolyline();
 });
 
-// ---- ヒットテスト・範囲選択 ----
+// ===== クリックした図形を探す・範囲選択 =====
 function hitTestScreen(s) {
   const real = screenToReal(s);
   const tolMm = 6 / pxPerRealMm();
@@ -1016,12 +1017,12 @@ function selectInBox(startScreen, endScreen) {
       inside.push(e.id);
     }
   }
-  // ねじ穴などのまとまり(グループ)は、見えている部分がすべて枠に入った時だけまとめて選ぶ
+  // ねじ穴などのまとまり(グループ)は、見えている部分がすべて枠に入ったときだけまとめて選ぶ
   const visible = (e) => isEntityVisible(state.doc, e);
   for (const id of groupsFullyInside(state.doc.entities, inside, visible)) state.selection.add(id);
 }
 
-// ---- ツールのポインタ処理 ----
+// ===== 道具ごとのマウス操作 =====
 function handleToolPointerDown(s, ev) {
   const p = state.tool === 'select' ? snapReal(screenToReal(s)) : constrainByShift(resolvePoint(s), ev.shiftKey);
   if (state.tool === 'select') {
@@ -1052,7 +1053,7 @@ function handleToolPointerDown(s, ev) {
         state.subSel = null;
       } else if (state.selection.size === 1
         && (hit.type === 'polyline' || hit.type === 'spline')) {
-        // 選択済みの連続線/スプラインをもう一度クリック → 最寄りの線分を選択
+        // 選んである連続線・スプラインをもう一度クリック → いちばん近い線分を選ぶ
         state.subSel = nearestPolySegment(hit, screenToReal(s));
       }
       if (!ev.shiftKey && isOverDimText(hit, s)) {
@@ -1171,7 +1172,7 @@ function handleToolPointerDown(s, ev) {
     }
     render();
   } else if (state.tool === 'earc') {
-    // 楕円弧: 中心 → コーナー(半径XY) → 開始点 → 終了点
+    // 楕円弧: 中心 → 外枠の角(横・縦の半径) → 弧の始まり → 弧の終わり
     const eparam = (d, q) => geo.round6(
       (Math.atan2((q.y - d.center.y) / d.ry, (q.x - d.center.x) / d.rx) * 180) / Math.PI);
     if (!state.draft) {
@@ -1200,7 +1201,7 @@ function handleToolPointerDown(s, ev) {
     }
     render();
   } else if (state.tool === 'text') {
-    // canvasへのフォーカス移動(mousedown既定動作)が入力欄のフォーカスを奪うのを防ぐ
+    // キャンバスを押しても、入力中の欄から入力先が移らないようにする(mousedown の既定の動作を止める)
     ev.preventDefault();
     openTextEntry(s, 'text', { pos: p });
   } else if (state.tool === 'dim') {
@@ -1347,7 +1348,7 @@ function handleToolPointerDown(s, ev) {
     if (hit) {
       const boundary = boundaryFromEntity(hit);
       if (boundary) {
-        // 角度は 0° も有効。空欄や数字でない時だけ既定値にする
+        // 角度は 0° も有効。空欄や数字でないときだけ既定値にする
         const angle = parseNumber(el('hatch-angle').value);
         const space = parseNumber(el('hatch-space').value);
         const angleDeg = Number.isFinite(angle) ? angle : 45;
@@ -1380,7 +1381,7 @@ function handleToolPointerDown(s, ev) {
     }));
     setTool('select');
   } else if (state.tool === 'thread') {
-    // ねじ穴: クリック位置に 下穴円+谷3/4円弧+中心線十字 を一括生成。
+    // ねじ穴: クリックした位置に、下穴の円・ねじ谷の3/4の円弧・中心線の十字をまとめて作る。
     // 1つのまとまり(グループ)にして、まとめて選んで動かせるようにする(「分解」で別々に戻る)
     const parts = threadHoleEntities(p, el('thread-size').value, 3 / vt.scaleK(state.doc.scale));
     if (parts) {
@@ -1558,7 +1559,7 @@ function handleToolPointerUp() {
     return;
   }
   if (state.moveDrag) {
-    if (state.moveDrag.snapshotPushed) lastPanelKey = null; // ドラッグ移動後に値を更新
+    if (state.moveDrag.snapshotPushed) lastPanelKey = null; // ドラッグで動かした後の値を数値欄に出す
     state.moveDrag = null;
     render();
     return;
@@ -1570,11 +1571,11 @@ function handleToolPointerUp() {
   }
 }
 
-// ---- ポインタイベント ----
+// ===== マウスのイベント =====
 canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
 canvas.addEventListener('pointerdown', (ev) => {
   const s = eventScreen(ev);
-  try { canvas.setPointerCapture(ev.pointerId); } catch { /* 合成イベント等 */ }
+  try { canvas.setPointerCapture(ev.pointerId); } catch { /* プログラムが作ったイベントなどでは失敗するが、そのまま続ける */ }
   if (ev.button === 1 || state.spaceDown) {
     startPan(s);
     return;
@@ -1598,7 +1599,7 @@ canvas.addEventListener('pointerdown', (ev) => {
   if (ev.button !== 0) return;
   handleToolPointerDown(s, ev);
 });
-// マウスを乗せた図形のうち、今のツールでクリックできるものを強調する
+// マウスを乗せた図形のうち、今の道具でクリックできるものを強調する
 function updateHover(s) {
   const busy = state.moveDrag || state.dimTextDrag || state.copyDrag || state.gripDrag
     || state.draft?.kind === 'box';
@@ -1692,7 +1693,7 @@ canvas.addEventListener('pointerup', (ev) => {
   handleToolPointerUp(eventScreen(ev));
 });
 
-// ---- Undo/Redo・削除・複製 ----
+// ===== 元に戻す・やり直し・削除・複製 =====
 function restoreSnapshot(snap) {
   const paperBefore = JSON.stringify(state.doc.paper);
   applySnapshot(state.doc, snap);
@@ -1738,7 +1739,7 @@ function duplicateSelection() {
   render();
 }
 
-// ---- コピー & ペースト ----
+// ===== コピー・貼り付け =====
 function copySelection() {
   if (state.selection.size === 0) return;
   state.clipboard = state.doc.entities
@@ -1762,7 +1763,7 @@ function unionBounds(items) {
 // コピーした図形をマウスの位置に貼り付ける(Ctrl+V)
 function pasteClipboard() {
   if (!state.clipboard || state.clipboard.length === 0) return;
-  // 貼り付け位置: マウスがキャンバス上ならその位置(バウンディング中心)、なければ+10mmずらし
+  // 貼り付ける位置: マウスがキャンバスの上ならその位置(囲む四角の真ん中を合わせる)、なければ元の位置から10mmずらす
   const b = unionBounds(state.clipboard);
   const center = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
   const target = state.mouseReal;
@@ -1779,7 +1780,7 @@ function pasteClipboard() {
   state.selection = new Set(ids);
   render();
 }
-// ---- 回転・拡大縮小(選択範囲の中心が基準) ----
+// ===== 回転・拡大縮小(選択範囲の中心が基準) =====
 function rotateSelectionBy(deg) {
   if (state.selection.size === 0) {
     showMessage('回転: 先に回したい図形をクリックして選んでください');
@@ -1836,7 +1837,7 @@ function selectionCenter() {
     b.minX = Math.min(b.minX, eb.minX); b.minY = Math.min(b.minY, eb.minY);
     b.maxX = Math.max(b.maxX, eb.maxX); b.maxY = Math.max(b.maxY, eb.maxY);
   }
-  // グリッドに丸めず正確な中心を使う(丸めると回転・反転のたびに図形の位置がずれる)
+  // 方眼に丸めず正確な中心を使う(丸めると回転・反転のたびに図形の位置がずれる)
   return { x: geo.round6((b.minX + b.maxX) / 2), y: geo.round6((b.minY + b.maxY) / 2) };
 }
 // 選んだ図形を左右('x')または上下('y')に反転する
@@ -1848,7 +1849,7 @@ function mirrorSelection(axis) {
 el('mirror-x').addEventListener('click', () => mirrorSelection('x'));
 el('mirror-y').addEventListener('click', () => mirrorSelection('y'));
 
-// 分解: 矩形・連続線(正多角形を含む)を個別の直線に(トリム/フィレット/面取りの前処理)、
+// 分解: 矩形・連続線(正多角形を含む)を1本ずつの直線に(トリム・フィレット・面取りの前に使う)、
 // ねじ穴などのまとまり(グループ)を別々の図形に戻す
 function explodeSelection() {
   const selected = state.doc.entities.filter((e) => state.selection.has(e.id));
@@ -1918,7 +1919,7 @@ function setSelectedDimOrientation(orient) {
   }
 }
 
-// ---- 文字入力オーバーレイ(注記/引出線/寸法値編集で共用) ----
+// ===== 図面の上の入力欄 =====
 const textEntry = el('text-entry');
 let textEntryMode = 'text';
 let textEntryCtx = null;
@@ -1981,7 +1982,7 @@ textEntry.addEventListener('keydown', (ev) => {
   }
 });
 
-// ---- 数値入力パネル ----
+// ===== 数値欄の値で描く・直す =====
 function drawLineFromInputs() {
   const x = parseNumber(el('num-x').value);
   const y = parseNumber(el('num-y').value);
@@ -1991,7 +1992,7 @@ function drawLineFromInputs() {
   const start = originToAbs({ x, y });
   commitLine(start, geo.lineEndPoint(start, len, ang));
 }
-// 選択中なら数値でプロパティを更新、未選択なら新規作図
+// 図形を選んでいれば数値欄の値で直し、選んでいなければ新しく描く
 function applyNumPanel() {
   const sel = state.tool === 'select' ? selectedEditable() : null;
   if (!sel) {
@@ -2022,14 +2023,14 @@ function applyNumPanel() {
   const y = v('y');
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   const p = originToAbs({ x, y });
-  lastPanelKey = null; // 更新後の正規化値で再同期させる
+  lastPanelKey = null; // 直した後の(整えた)値を数値欄に出し直す
 
   const normEnd = (start, end) => {
     while (end <= start) end += 360;
     return end;
   };
   if ((sel.type === 'polyline' || sel.type === 'spline') && state.subSel != null) {
-    // セグメント単位: 始点基準で終点側の頂点が動く
+    // 線分1本ずつ: 始点はそのままで、終点側の頂点が動く
     const len = v('len');
     const ang = v('ang');
     if (!(len > 0) || !Number.isFinite(ang)) return;
@@ -2097,7 +2098,7 @@ function applyNumPanel() {
 el('num-draw').addEventListener('click', applyNumPanel);
 
 // どの欄でも Enter で反映。直線・正多角形の作図中はその数値で確定。
-// 選択要素の編集中は、欄からフォーカスが外れた時(change)にも自動反映する。
+// 図形を直しているときは、欄から離れたとき(change)にも自動で反映する
 el('np-fields').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter' || isComposing(ev)) return;
   if (state.draft?.kind === 'line' || state.draft?.kind === 'polygon') {
@@ -2127,7 +2128,7 @@ el('np-fields').addEventListener('change', (ev) => {
   if (state.tool === 'select' && selectedEditable()) applyNumPanel();
 });
 
-// ---- 設定UI ----
+// ===== 設定の欄 =====
 function syncSettingsUI() {
   el('paper-size').value = state.doc.paper.size;
   el('paper-orientation').value = state.doc.paper.orientation;
@@ -2185,13 +2186,13 @@ el('show45').addEventListener('change', () => {
 
 el('show-guide').addEventListener('change', () => {
   state.showGuide = el('show-guide').checked;
-  try { localStorage.setItem('seizu.showGuide', state.showGuide ? '1' : '0'); } catch { /* 無視 */ }
+  try { localStorage.setItem('seizu.showGuide', state.showGuide ? '1' : '0'); } catch { /* 保存できなくても動作は続ける */ }
   render();
 });
 
-// ---- 線種・線の太さ・文字高さ ----
+// ===== 線種・線の太さ・文字高さ =====
 // 選択ツールで図形を選択中は「選択図形の値」を表示・変更し、
-// それ以外は「そのツールで次に作る図形の設定」を表示・変更する(ツールの種類ごとに記憶)
+// それ以外は「その道具で次に作る図形の設定」を表示・変更する(道具の種類ごとに記憶)
 const ANNO_TOOLS = ['dim', 'dia', 'rad', 'angle', 'chamfer', 'leader', 'roughness', 'fcf', 'balloon', 'bom'];
 // その道具で次に作る図形の設定(線種・太さ・文字の大きさ)と、使う項目
 function toolPen(tool) {
@@ -2226,7 +2227,7 @@ function showStyleValue(select, info) {
   let v = 'none';
   if (info) v = info.mixed ? 'mixed' : info.value == null ? '' : String(info.value);
   if (![...select.options].some((o) => o.value === v)) {
-    // 選択肢にない値(ファイルを手で編集した場合など)も表示できるよう昇順の位置に足す
+    // 選択肢にない値(ファイルを手で編集した場合など)も表示できるよう小さい順の位置に足す
     const before = [...select.options].find((o) => Number(o.value) > Number(v));
     select.add(new Option(`${v}mm`, v), before ?? null);
   }
@@ -2254,7 +2255,7 @@ function syncStyleUI() {
   showStyleValue(el('line-width'), width);
   showStyleValue(el('text-size'), text);
 }
-// 選択図形に線種(kind='lineType')・太さ('width')・文字高さ('text')を適用。対象がなければ false
+// 線種(kind='lineType')・太さ('width')・文字高さ('text')ごとに、当てられる図形か調べる関数と当てる関数
 const STYLE_APPLY = {
   lineType: [hasLineType, applyPreset],
   width: [hasStroke, applyWidth],
@@ -2287,7 +2288,7 @@ el('line-style').addEventListener('change', (ev) => changeStyle('lineType', ev.t
 el('line-width').addEventListener('change', (ev) => changeStyle('width', ev.target));
 el('text-size').addEventListener('change', (ev) => changeStyle('text', ev.target));
 
-// ---- 右クリックメニュー ----
+// ===== 右クリックメニュー =====
 let menuScreen = null; // メニューを開いた位置(書き換え入力の表示位置に使う)
 const popup = createPopupMenu(runMenuAction);
 // 描きかけ、または2段階の操作の途中か
@@ -2309,7 +2310,7 @@ function openCanvasMenu(s, ev) {
     originAtFrame: isOriginAtFrame(state.doc),
   }), ev.clientX, ev.clientY);
 }
-// 図形の種類 → 説明するツール(ヘルプの項目選び)
+// 図形の種類 → 説明する道具(ヘルプの項目選び)
 function toolOfEntity(e) {
   if (e.type === 'dim') return e.dimType === 'linear' ? 'dim' : e.dimType;
   if (e.type === 'ellipse' && e.startAngle != null) return 'earc';
@@ -2375,7 +2376,7 @@ function runMenuAction(id) {
   }
 }
 
-// ---- ヘルプ ----
+// ===== ヘルプ =====
 const help = createHelp();
 // ヘルプを開く(項目を指定すれば、その説明から)
 function openHelp(topicId) {
@@ -2386,7 +2387,7 @@ el('help-open').addEventListener('click', () => {
   openHelp(state.tool === 'select' ? null : helpTopicForTool(state.tool));
 });
 
-// ---- カーソル横の操作ガイド ----
+// ===== カーソル横の操作ガイド =====
 // 作図の段階(何回クリックしたか)
 function draftStage() {
   if (state.tool === 'offset') return state.offsetPick ? 1 : 0;
@@ -2483,7 +2484,7 @@ function updateCursorTip() {
   if (guide) tip.append(Object.assign(document.createElement('div'), { textContent: guide }));
   if (values) tip.append(Object.assign(document.createElement('div'), { className: 'values', textContent: values }));
   tip.hidden = false;
-  // カーソルの右下に表示。はみ出す場合は左・上へ
+  // カーソルの右下に出す。はみ出すときは左・上へ
   const wrap = el('canvas-wrap');
   const x = s.x + 18 + tip.offsetWidth > wrap.clientWidth - 16 ? s.x - tip.offsetWidth - 12 : s.x + 18;
   const y = s.y + 20 + tip.offsetHeight > wrap.clientHeight - 16 ? s.y - tip.offsetHeight - 12 : s.y + 20;
@@ -2524,7 +2525,7 @@ function handleEscape() {
   }
 }
 
-// ---- 線種の間隔(破線・一点鎖線・二点鎖線の線の長さと隙間。図面ごと・用紙上mm) ----
+// ===== 線種の間隔(破線・一点鎖線・二点鎖線の線の長さと隙間。図面ごと・用紙mm) =====
 const DASH_ROWS = [
   ['dashed', 'かくれ線（破線）'],
   ['chain', '中心線（一点鎖線）'],
@@ -2590,7 +2591,7 @@ function buildDashPanel() {
   list.append(foot);
 }
 
-// ---- レイヤーパネル ----
+// ===== レイヤーの表 =====
 function buildLayerPanel() {
   const list = el('layer-list');
   list.innerHTML = '<span class="head">レイヤー</span><span class="head">表示</span><span class="head">印刷</span>';
@@ -2625,12 +2626,12 @@ function buildLayerPanel() {
   }
 }
 
-// ---- ファイル操作 ----
+// ===== ファイル操作 =====
 function confirmDiscard() {
   return !state.dirty || confirm('未保存の変更があります。破棄して続行しますか?');
 }
 
-// 図面を入れ替える時に、前の図面に紐づく選択・途中の操作をすべて消す
+// 図面を入れ替えるときに、前の図面に紐づく選択・途中の操作をすべて消す
 function resetInteraction() {
   state.selection = new Set();
   state.subSel = null;
@@ -2720,7 +2721,7 @@ el('file-open').addEventListener('click', async () => {
 el('file-save').addEventListener('click', () => saveFile(false));
 el('file-saveas').addEventListener('click', () => saveFile(true));
 
-// ---- SVG出力・印刷 ----
+// ===== SVG出力・印刷 =====
 function exportSVG() {
   const svg = toSVG(state.doc);
   const name = state.fileName.replace(/\.json$/i, '') + '.svg';
@@ -2734,8 +2735,8 @@ function exportSVG() {
 }
 el('export-svg').addEventListener('click', exportSVG);
 
-// 実寸印刷: 用紙サイズを@pageに指定したSVGを印刷ダイアログへ。
-// 印刷時は倍率100%(実際のサイズ)を指定すること。
+// 実寸で印刷する: 用紙の大きさを @page に指定したSVGを、印刷の画面に渡す。
+// 印刷するときは倍率100%(実際のサイズ)を選ぶこと
 function printDrawing() {
   const svg = toSVG(state.doc);
   const paper = paperDimensions(state.doc.paper.size, state.doc.paper.orientation);
@@ -2753,7 +2754,7 @@ function printDrawing() {
 }
 el('print').addEventListener('click', printDrawing);
 
-// ---- ドラッグ&ドロップで開く ----
+// ===== ドラッグ&ドロップで開く =====
 window.addEventListener('dragover', (ev) => ev.preventDefault());
 window.addEventListener('drop', async (ev) => {
   ev.preventDefault();
@@ -2761,7 +2762,7 @@ window.addEventListener('drop', async (ev) => {
   const file = ev.dataTransfer.files?.[0];
   if (!file) return;
   if (!confirmDiscard()) return;
-  // 可能なら書込ハンドルも取得(Chromium)。awaitより先に取ること
+  // できれば上書き保存用の手がかり(ハンドル)も取る(Chrome・Edge)。await より先に取ること
   let handlePromise = null;
   if (item?.getAsFileSystemHandle) handlePromise = item.getAsFileSystemHandle();
   const text = await file.text();
@@ -2770,17 +2771,17 @@ window.addEventListener('drop', async (ev) => {
     try {
       const h = await handlePromise;
       if (h?.kind === 'file') state.fileio.adoptHandle(h);
-    } catch { /* ハンドルが取れなくても読み込みは続行 */ }
+    } catch { /* 手がかりが取れなくても読み込みは続ける */ }
   }
   loadDocText(text, file.name);
 });
 
-// ---- 離脱警告 ----
+// ===== 閉じる前の確認(保存していない変更があるとき) =====
 window.addEventListener('beforeunload', (ev) => {
   if (state.dirty) ev.preventDefault();
 });
 
-// ---- キーボード ----
+// ===== キーボード =====
 function isTyping(ev) {
   return ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement;
 }
@@ -2817,17 +2818,17 @@ window.addEventListener('keydown', (ev) => {
     showMessage(`${what}を入力して Enter で確定（角度は右の欄）`);
     return;
   }
-  // 1文字キーでツールを切り替え
+  // 1文字のキーで道具を切り替える
   if (plainKey && toolForKey(ev.key)) {
     ev.preventDefault();
     popup.close();
     setTool(toolForKey(ev.key));
     return;
   }
-  // 矢印キーでパン
+  // 矢印キーで表示を動かす
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(ev.key)) {
     ev.preventDefault();
-    const step = 60 / state.view.pxPerMm; // 60px相当
+    const step = 60 / state.view.pxPerMm; // 60px分
     state.view = {
       ...state.view,
       panX: state.view.panX
@@ -2854,8 +2855,8 @@ window.addEventListener('keyup', (ev) => {
   if (ev.code === 'Space') state.spaceDown = false;
 });
 
-// ---- 起動 ----
-window.__seizu = state; // デバッグ・動作検証用(読み取り想定)
+// ===== 起動 =====
+window.__seizu = state; // 動作の確かめ用(読むだけに使う)
 buildStyleOptions();
 try {
   activateTab(localStorage.getItem('seizu.tab') || 'draw');
@@ -2868,7 +2869,7 @@ buildLayerPanel();
 buildDashPanel();
 updateTitle();
 
-// クラッシュ後の復元確認(非モーダルのバナーで提示)
+// 異常終了の後の復元の確認(画面の上の帯で知らせ、操作は止めない)
 loadBackup().then((b) => {
   if (!b || !b.text) return;
   const banner = el('restore-banner');

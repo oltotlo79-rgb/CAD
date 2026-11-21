@@ -1,4 +1,5 @@
 // 元に戻す・やり直しの履歴。変更する前の図面(図形と設定)を文字にして積んでおく
+
 // 履歴を作る(limit 回分まで覚える)
 export function createHistory(limit = 100) {
   return { limit, undoStack: [], redoStack: [] };

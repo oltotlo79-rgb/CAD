@@ -58,7 +58,7 @@ function intersectionsBetween(e1, e2) {
   return out;
 }
 
-// p の近傍(tolMm以内)で最も近いスナップ点を返す
+// p の近く(tolMm 以内)でいちばん近い吸着点を返す
 // 戻り値: { x, y, kind } | null。kind: end/mid/center/quad/intersection
 // options.perimeterStepDeg: 円・円弧の円周の点を、上下左右に加えてこの角度ごとにも出す(引出線の矢印の先)
 // options.exclude: 吸着の相手にしない図形のid(つまみで形を変えている図形)

@@ -69,7 +69,7 @@ export function draw(ctx, state) {
   if (state.snapHint) drawSnapHint(ctx, doc, view, state.snapHint);
 }
 
-// 中心線モードの中点ガイド: 中点マーカー(三角)と、そこを通る水平/垂直の軸線
+// 中心線モードの真ん中の目印: 三角の印と、そこを通る水平・垂直の軸の線
 function drawMidGuides(ctx, doc, view, guides) {
   const EXT = 60; // 軸線の表示長さ(px)
   ctx.save();
@@ -98,7 +98,7 @@ function drawMidGuides(ctx, doc, view, guides) {
   ctx.restore();
 }
 
-// 右ドラッグ複製の移動先プレビュー(破線の枠)
+// 右ドラッグで複製するときの置き先(破線の枠)
 function drawCopyGhost(ctx, doc, view, d) {
   const dx = d.current.x - d.startReal.x;
   const dy = d.current.y - d.startReal.y;
@@ -118,7 +118,7 @@ function drawGrid(ctx, doc, view, frame, k) {
   const step = effectiveGridStep(doc.grid, pxPerRealMm);
   if (!step || step * pxPerRealMm < 2) return;
 
-  // 図面枠内側の実寸mm範囲
+  // 図面枠の内側の範囲(実寸mm)
   const x0 = frame.x / k, x1 = (frame.x + frame.width) / k;
   const y0 = frame.y / k, y1 = (frame.y + frame.height) / k;
   const isMajor = (v) =>
@@ -178,13 +178,13 @@ function drawTitleBlock(ctx, doc, view) {
   }
 }
 
-// 投影補助線(選択要素由来の一時ガイド)と45°ミラー線
+// 投影補助線(選んだ図形から出す、その場だけのガイド)と45°ミラー線
 function drawProjection(ctx, doc, view, state, paper, k) {
   const g = state.guides;
   const m45 = state.show45 ? doc.mirror45 : null;
   const hasGuides = g && (g.xs.length > 0 || g.ys.length > 0);
   if (!hasGuides && !m45) return;
-  const W = paper.width / k;  // 実寸mmでの用紙範囲
+  const W = paper.width / k;  // 用紙の範囲(実寸mm)
   const H = paper.height / k;
   ctx.save();
   ctx.setLineDash([5, 4]);
@@ -229,12 +229,12 @@ function strokeEntity(ctx, doc, view, e, k) {
   } else if (e.type === 'arc') {
     const c = realToScreen({ x: e.cx, y: e.cy }, doc, view);
     ctx.beginPath();
-    // 実座標はy上向き・画面はy下向きなので角度を反転して描く
+    // 実寸の座標は y が上向き、画面は y が下向きなので、角度を逆にして描く
     ctx.arc(c.x, c.y, e.r * z, -e.endAngle * DEG, -e.startAngle * DEG, false);
     ctx.stroke();
   } else if (e.type === 'ellipse') {
     const c = realToScreen({ x: e.cx, y: e.cy }, doc, view);
-    const rot = -(e.rotation ?? 0) * DEG; // y反転で回転も反転
+    const rot = -(e.rotation ?? 0) * DEG; // 上下が逆なので回転も逆
     ctx.beginPath();
     if (e.startAngle != null && e.endAngle != null) {
       ctx.ellipse(c.x, c.y, e.rx * z, e.ry * z, rot, -e.endAngle * DEG, -e.startAngle * DEG, false);
@@ -293,7 +293,7 @@ function drawArrows(ctx, doc, view, arrows) {
   ctx.fillStyle = ctx.strokeStyle;
   for (const a of arrows) {
     const tip = realToScreen(a.at, doc, view);
-    const ang = -a.angleDeg * DEG; // y反転で角度も反転
+    const ang = -a.angleDeg * DEG; // 上下が逆なので角度も逆
     const bx = tip.x - L * Math.cos(ang);
     const by = tip.y - L * Math.sin(ang);
     const px = -Math.sin(ang);
@@ -331,17 +331,17 @@ function drawEntities(ctx, doc, view, state, k) {
   for (const e of doc.entities) {
     if (visible.get(e.layer) === false) continue;
     const isSelected = selection.has(e.id);
-    // 線の太さ・破線は用紙上mm基準(縮尺に依存しない)。太さは要素ごとの指定を優先
+    // 線の太さ・破線は用紙mm(縮尺に依存しない)。太さは図形ごとの指定を優先
     const width = Math.max(1, strokeWidthMm(e) * view.pxPerMm);
     // マウスを乗せた(クリックできる)図形は薄い青で強調。まとまり(ねじ穴など)は全体を強調
     const isHover = !isSelected && (state.hover === e.id
       || (state.hoverGroup != null && e.group === state.hoverGroup));
     ctx.strokeStyle = isSelected ? COLORS.selected : isHover ? COLORS.hover : COLORS.entity;
     ctx.lineWidth = isSelected ? width + 2 : isHover ? width + 1.5 : width;
-    // 破線の間隔は図面ごとの設定(用紙上mm)
+    // 破線の間隔は図面ごとの設定(用紙mm)
     ctx.setLineDash(dashArrayMm(e.lineType, doc.dashPatterns).map((mm) => Math.max(1.5, mm * view.pxPerMm)));
     strokeEntity(ctx, doc, view, e, k);
-    // 連続線/スプラインのセグメント選択の強調表示
+    // 連続線・スプラインで選んだ線分1本の強調
     if (isSelected && subSel != null && selection.size === 1
       && (e.type === 'polyline' || e.type === 'spline')) {
       const n = e.points.length;
@@ -423,7 +423,7 @@ function drawSnapHint(ctx, doc, view, hint) {
   } else if (hint.kind === 'intersection') {
     ctx.moveTo(s.x - 5, s.y - 5); ctx.lineTo(s.x + 5, s.y + 5);
     ctx.moveTo(s.x - 5, s.y + 5); ctx.lineTo(s.x + 5, s.y - 5);
-  } else { // center / quad
+  } else { // 中心・円周の点(center・quad)
     ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
   }
   ctx.stroke();

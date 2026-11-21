@@ -13,7 +13,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const output = path.join(root, 'www/help/screenshots');
 await mkdir(output, { recursive: true });
 const source = await readFile(path.join(root, 'src/app.js'), 'utf8');
-// 撮影時だけ付ける初期化用フック。配布HTMLには含めない。
+// 撮影のときだけ付ける初期化用フック。配布HTMLには含めない
 const hooks = `
 globalThis.__helpCapture = {
   reset(options = {}) {
@@ -119,7 +119,7 @@ async function shot(key, caption, options={}) {
     const p=await point(...(options.center ?? [100,100]));
     const width=options.width ?? 650,height=options.height ?? 330;
     clip={x:Math.max(0,Math.min(1280-width,Math.round(p.x-width/2))),y:Math.max(0,Math.min(800-height,Math.round(p.y-height/2))),width,height};
-    // 文字や操作ガイドを途中で切らず、実際の要素の全体を収める。
+    // 文字や操作ガイドを途中で切らず、実際の要素の全体を収める
     for (const selector of ['#cursor-tip', '#text-entry']) {
       if (!(await page.locator(selector).isVisible())) continue;
       const b=await page.locator(selector).boundingBox();
@@ -401,7 +401,7 @@ try {
   await finishShot('follow-dimline','寸法だけを選んで下へドラッグすると、四角に付いた点は残り、寸法線の位置だけが動く。',{center:[115,88],width:900,height:420});
   for(const [id,value] of [['roughness','Ra 1.6'],['fcf','//|0.02|A']]) {
     await reset({entities:[rect]});await tool(id);await click(80,120);await tool('select');await click(85,123,{clickCount:2});
-    // 記号の実際の当たり判定内で編集欄が開くことを確認する。
+    // 記号の実際の当たり判定内で編集欄が開くことを確認する
     if(!(await page.locator('#text-entry').isVisible())) await click(82,125,{clickCount:2});
     await page.locator('#text-entry').fill(value);
     await shot(`${id}-edit`,`${id==='roughness'?'粗さ記号にRa 1.6':'公差枠に//|0.02|A'}を入力する。`,{height:430});await page.locator('#text-entry').press('Enter');
@@ -487,7 +487,7 @@ try {
   await reset({entities:[rect,linear,{type:'line',x1:40,y1:100,x2:160,y2:100,layer:'aux',lineType:'thin'}]});await tab('file');
   await control('print-controls','「SVG出力」で画像を書き出し、「印刷」から紙やPDFへ出力する。','[data-panel="file"] .group:last-child');
   // 本体の印刷iframeの中身を撮影。ブラウザの印刷ダイアログを模写しない。
-  // headlessのprint()はダイアログを出さず、アプリの印刷HTMLを保持する。
+  // headlessのprint()はダイアログを出さず、アプリの印刷HTMLを保持する
   await page.locator('#print').click();
   const iframe=page.frames().find(f=>f!==page.mainFrame());assert.ok(iframe);
   const printHTML=await iframe.content();
@@ -501,7 +501,7 @@ try {
   await finishShot('view-fit','「全体」で用紙全体を表示した状態。',{full:true});await move(100,100);await page.keyboard.down('Shift');await page.mouse.wheel(0,-400);await page.keyboard.up('Shift');
   await finishShot('view-zoom','Shift+ホイールでマウス位置を中心に拡大した状態。図形の寸法は変わらない。',{full:true});
   await control('view-controls','右上の「＋」「－」「全体」で画面の倍率を操作する。','#topbar .quick');
-  // ヘルプ自体の実画面。スクリーンショットを読み込む前の撮影でも循環参照を起こさない。
+  // ヘルプ自体の実画面。スクリーンショットを読み込む前の撮影でも循環参照を起こさない
   await page.keyboard.press('F1');await page.locator('#help input').fill('円 描く');
   await shot('help-search','検索欄に「円 描く」と入力すると、該当する説明と左の検索結果が表示される。',{selector:'.help-window',pad:0});await page.keyboard.press('Escape');
   await reset();await page.keyboard.press('l');assert.equal(await page.evaluate(()=>window.__seizu.tool),'line');
@@ -514,7 +514,7 @@ try {
   inputs.push(...(await readdir(path.join(root,'src'))).filter(n=>n.endsWith('.js')&&n!=='helpScreenshots.js').map(n=>`src/${n}`),'scripts/capture-help.mjs');
   const sourceHashes={};
   for(const file of inputs)sourceHashes[file]=createHash('sha256').update((await readFile(path.join(root,file),'utf8')).replace(/\r\n/g,'\n')).digest('hex');
-  await writeFile(path.join(root,'src/helpScreenshots.js'),`// npm run help:capture で実画面から生成。手作業で画面を描き直さない。\nexport const HELP_SCREENSHOTS = ${JSON.stringify(shots,null,2)};\n`);
+  await writeFile(path.join(root,'src/helpScreenshots.js'),`// npm run help:capture で実画面から生成。手作業で画面を描き直さない\nexport const HELP_SCREENSHOTS = ${JSON.stringify(shots,null,2)};\n`);
   await writeFile(path.join(output,'provenance.json'),JSON.stringify({viewport:{width:1280,height:800},deviceScaleFactor:1,browser:browser.version(),sourceHashes},null,2)+'\n');
   console.log(`${Object.keys(shots).length} actual screenshots captured`);
 } finally {

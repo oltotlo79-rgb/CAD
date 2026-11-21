@@ -47,7 +47,7 @@ export function createFileIO() {
     reset() { handle = null; },
     adoptHandle(h) { handle = h; },
 
-    // 戻り値 { name, text } / キャンセル時 null
+    // 戻り値: { name, text }。キャンセルしたら null
     async open() {
       if (window.showOpenFilePicker) {
         try {
@@ -63,7 +63,7 @@ export function createFileIO() {
       return openViaInput();
     },
 
-    // 戻り値: 保存したファイル名 / キャンセル時 null
+    // 戻り値: 保存したファイル名。キャンセルしたら null
     async save(text, suggestedName) {
       if (handle) {
         await writeHandle(handle, text);

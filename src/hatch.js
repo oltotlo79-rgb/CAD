@@ -1,15 +1,15 @@
 // ハッチング(断面の斜線)。閉じた図形(矩形・円・楕円・閉じた連続線)を
-// 境界として、平行線を偶奇規則でクリップして生成する。
-// 依存は geometry.js のみ(model.js との循環を避けるため辺の展開は自前)。
+// 範囲として、平行線を範囲の内側だけ残して作る(内側かどうかは境目を横切った回数の偶奇で決める)。
+// 使うのは geometry.js だけ(model.js と互いに読み込み合わないよう、辺を並べる処理はここに持つ)
 import { round6 } from './geometry.js';
 
 const DEG = Math.PI / 180;
 
-// 対象エンティティから境界を作る。ハッチング不可なら null
+// 図形からハッチの範囲を作る。ハッチを入れられない図形なら null
 export function boundaryFromEntity(e) {
   if (e.type === 'rect') {
     if (e.rotation) {
-      // 回転矩形は4隅の多角形として扱う
+      // 回転した矩形は4隅の多角形として扱う
       const rot = (e.rotation * Math.PI) / 180;
       const c = Math.cos(rot);
       const s = Math.sin(rot);
@@ -20,7 +20,7 @@ export function boundaryFromEntity(e) {
   }
   if (e.type === 'circle') return { kind: 'circle', cx: e.cx, cy: e.cy, r: e.r };
   if (e.type === 'ellipse') {
-    if (e.rotation || e.startAngle != null) return null; // 回転楕円・楕円弧は未対応
+    if (e.rotation || e.startAngle != null) return null; // 回転した楕円・楕円弧にはまだ対応していない
     return { kind: 'ellipse', cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry };
   }
   if (e.type === 'polyline' && e.closed && e.points.length >= 3) {
@@ -65,7 +65,7 @@ export function pointInBoundary(b, p) {
     if (b.rx <= 0 || b.ry <= 0) return false;
     return Math.hypot((p.x - b.cx) / b.rx, (p.y - b.cy) / b.ry) <= 1;
   }
-  // 偶奇規則のレイキャスト
+  // 点から横へ伸ばした線が境目を横切る回数が奇数なら内側
   const pts = polygonPoints(b);
   let inside = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -79,7 +79,7 @@ export function pointInBoundary(b, p) {
   return inside;
 }
 
-// 基準点p0・方向u(単位)の直線と境界の交点パラメータt列
+// 基準点 p0・向き u(長さ1)の直線と、範囲の境目との交点の位置 t の一覧
 function lineBoundaryTs(p0, u, b) {
   if (b.kind === 'circle' || b.kind === 'ellipse') {
     const rx = b.kind === 'circle' ? b.r : b.rx;
@@ -107,12 +107,12 @@ function lineBoundaryTs(p0, u, b) {
     if (Math.abs(D) < 1e-12) continue;
     const t = (ex * (ay - p0.y) - ey * (ax - p0.x)) / D;
     const v = (u.x * (ay - p0.y) - u.y * (ax - p0.x)) / D;
-    if (v >= 0 && v < 1) ts.push(t); // 半開区間で頂点の二重カウントを防ぐ
+    if (v >= 0 && v < 1) ts.push(t); // 辺の片方の端だけを含めて、頂点を2回数えないようにする
   }
   return ts;
 }
 
-// ハッチング線分を生成する。spacing は実寸mm
+// ハッチの線分を作る。spacing は実寸mm
 export function hatchSegments(b, angleDeg, spacing) {
   const u = { x: Math.cos(angleDeg * DEG), y: Math.sin(angleDeg * DEG) };
   const n = { x: -u.y, y: u.x };
@@ -141,7 +141,7 @@ export function hatchSegments(b, angleDeg, spacing) {
   return segs;
 }
 
-// 境界の平行移動(translateEntities から使う)
+// ハッチの範囲の平行移動(translateEntities から使う)
 export function translateBoundary(b, dx, dy) {
   if (b.kind === 'rect') { b.x += dx; b.y += dy; }
   else if (b.kind === 'circle' || b.kind === 'ellipse') { b.cx += dx; b.cy += dy; }

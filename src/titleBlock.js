@@ -1,5 +1,5 @@
-// 表題欄。図面枠内側の右下に固定配置する。
-// 尺度・用紙は図面設定から自動反映(bind)で手入力不可(要件§11)。
+// 表題欄。図面枠の内側の右下に置く(位置は動かせない)。
+// 尺度・用紙は図面の設定から自動で入り(bind)、手では書き換えられない
 import { frameRect } from './papers.js';
 
 export const DEFAULT_TITLE_FIELDS = [
@@ -25,7 +25,7 @@ export function titleFieldText(doc, field) {
   return field.value ?? '';
 }
 
-// 用紙mm座標でのレイアウト。titleBlockが無効ならnull
+// 用紙mmの座標での配置。titleBlock が無効なら null
 export function titleBlockLayout(doc) {
   if (!doc.titleBlock || !Array.isArray(doc.titleBlock.fields)) return null;
   const frame = frameRect(doc.paper.size, doc.paper.orientation);

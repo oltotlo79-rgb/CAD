@@ -1,4 +1,4 @@
-// 日本語ヘルプの本文。図は実アプリの撮影画像へ差し替え、詳細と共通化する。
+// 日本語ヘルプの本文。図は実際の画面を撮った画像に差し替え、helpDetails.js の詳細と組み合わせる
 import { completeHelpTopic } from './helpDetails.js';
 
 export const HELP_CATEGORIES = [

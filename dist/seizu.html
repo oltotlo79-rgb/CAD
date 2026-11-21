@@ -83,7 +83,7 @@ input:disabled, select:disabled { opacity: 0.4; }
   display: grid; grid-template-columns: auto auto auto; gap: 4px 12px; align-items: center;
 }
 #layer-list .head { color: #889; font-size: 11px; }
-/* 復元の案内(黄色い帯) */
+/* ===== 復元の案内(黄色い帯) ===== */
 #restore-banner {
   display: none; gap: 10px; align-items: center;
   padding: 6px 10px; background: #6b5300; color: #ffe9a8;
@@ -117,16 +117,16 @@ input:disabled, select:disabled { opacity: 0.4; }
 /* 題名・欄・ボタンは縮めず、狭いときは右の説明文だけが折り返す */
 #np-title, #np-fields, #num-draw { flex-shrink: 0; white-space: nowrap; }
 #numpanel .hint { color: #888; margin-left: auto; }
-/* 原点設定の欄: 今の原点の位置(枠の左下から) */
+/* 原点設定のときに「移動」ボタンの右に足す部品(「初期位置に戻す」ボタンと今の原点の位置) */
 #np-extra { display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
 #np-extra:empty { display: none; }
-/* 原点設定の時は、右端の一般的な案内を隠して1行に収める */
+/* 原点設定のときは、右端の一般的な案内を隠して1行に収める */
 #np-extra:not(:empty) ~ .hint { display: none; }
 .org-info { color: #bbb; }
-/* 状態表示(いちばん下) */
+/* ===== 状態表示(いちばん下) ===== */
 #statusbar { padding: 4px 10px; background: #14161a; color: #9ab; font-family: Consolas, monospace; }
 
-/* カーソル横の操作ガイド */
+/* ===== カーソル横の操作ガイド ===== */
 #cursor-tip {
   position: absolute; z-index: 7; pointer-events: none; white-space: nowrap;
   padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 1.5;
@@ -134,7 +134,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 }
 #cursor-tip .values { color: #9fd0ff; font-family: Consolas, monospace; }
 
-/* 右クリックメニュー */
+/* ===== 右クリックメニュー ===== */
 .popup-menu {
   position: fixed; z-index: 50; min-width: 200px; padding: 4px 0;
   background: #262a30; border: 1px solid #555; border-radius: 5px;
@@ -151,8 +151,7 @@ input:disabled, select:disabled { opacity: 0.4; }
 .popup-menu .item:hover .key { color: #dde; }
 .popup-menu .sep { height: 1px; margin: 4px 0; background: #444; }
 
-/* ヘルプ(明るい配色で読みやすく) */
-/* ===== ヘルプの画面: 画面全体を暗くして、その上に白い窓を出す ===== */
+/* ===== ヘルプの画面(明るい配色で読みやすく): 画面全体を暗くして、その上に白い窓を出す ===== */
 #help {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.45);
@@ -270,7 +269,7 @@ input:disabled, select:disabled { opacity: 0.4; }
     <div class="group fixed">
       <button class="tool active" data-tool="select">選択</button>
     </div>
-    <!-- 「ファイル」タブ: 新規・開く・保存・名前を付けて保存 / SVG出力・印刷 -->
+    <!-- 「ファイル」タブ: 新規・開く・保存・名前を付けて保存、SVG出力・印刷 -->
     <div class="panel" data-panel="file">
       <div class="group">
         <button id="file-new" title="新規&#10;新しい白紙の図面を始める">新規</button>
@@ -283,7 +282,7 @@ input:disabled, select:disabled { opacity: 0.4; }
         <button id="print" title="印刷&#10;印刷画面を開く。倍率は100%(実際のサイズ)を選ぶと実寸で印刷。「PDFに保存」でPDFにもできる">印刷</button>
       </div>
     </div>
-    <!-- 「作図」タブ: 直線〜文字の作図 / 正多角形(右の欄は角の数) / ねじ穴(右のメニューはねじの太さ) -->
+    <!-- 「作図」タブ: 直線〜文字の作図、正多角形(右の欄は角の数)、ねじ穴(右のメニューはねじの太さ) -->
     <div class="panel active" data-panel="draw">
       <div class="group">
         <button class="tool" data-tool="line">直線</button>
@@ -308,7 +307,7 @@ input:disabled, select:disabled { opacity: 0.4; }
         </select>
       </div>
     </div>
-    <!-- 「寸法・記号」タブ: 寸法・φ・R・角度・C・引出線 / 粗さ・公差枠 / ハッチ(斜線の角度・間隔) / バルーン・部品表 -->
+    <!-- 「寸法・記号」タブ: 寸法・φ・R・角度・C・引出線、粗さ・公差枠、ハッチ(斜線の角度・間隔)、バルーン・部品表 -->
     <div class="panel" data-panel="annotate">
       <div class="group">
         <button class="tool" data-tool="dim">寸法</button>
@@ -332,7 +331,7 @@ input:disabled, select:disabled { opacity: 0.4; }
         <button class="tool" data-tool="bom">部品表</button>
       </div>
     </div>
-    <!-- 「編集」タブ: 回転・拡大縮小(右の欄に角度・倍率) / 反転・分解・グループ化 / トリム・延長 / オフセット / フィレット・面取り -->
+    <!-- 「編集」タブ: 回転・拡大縮小(右の欄に角度・倍率)、反転・分解・グループ化、トリム・延長、オフセット、フィレット・面取り -->
     <div class="panel" data-panel="edit">
       <div class="group">
         <button id="rotate" title="回転&#10;選んだ図形を、右の角度だけ回す（＋は左回り、－は右回り）">回転</button>
@@ -360,7 +359,7 @@ input:disabled, select:disabled { opacity: 0.4; }
         <label title="角を丸める半径 / 切り落とす大きさ(mm)">サイズ<input id="fillet-r" size="4" value="5"></label>
       </div>
     </div>
-    <!-- 「表示・設定」タブ: 用紙・縮尺 / 方眼とスナップ / 投影ガイド・45°線 / 原点・レイヤー・線種の間隔・操作ガイド -->
+    <!-- 「表示・設定」タブ: 用紙・縮尺、方眼とスナップ、投影ガイド・45°線、原点・レイヤー・線種の間隔・操作ガイド -->
     <div class="panel" data-panel="view">
       <div class="group">
         <label title="用紙の大きさ">用紙 <select id="paper-size">
@@ -442,7 +441,7 @@ input:disabled, select:disabled { opacity: 0.4; }
   <span id="np-title">数値入力:</span>
   <span id="np-fields"></span>
   <button id="num-draw">作図</button>
-  <!-- 「作図」ボタンの右に足す部品(原点設定の「初期位置に戻す」と今の原点の位置) -->
+  <!-- 「作図」ボタン(原点設定のときは「移動」)の右に足す部品(「初期位置に戻す」ボタンと今の原点の位置) -->
   <span id="np-extra"></span>
   <span class="hint">Escで中止 / 右クリックでメニュー / 寸法値・表題欄・部品表のマスはダブルクリックで記入 / 困ったら F1 でヘルプ</span>
 </section>
@@ -464,36 +463,36 @@ input:disabled, select:disabled { opacity: 0.4; }
  * 元のソースは src/*.js、画面は www/index.html、見た目は www/styles.css。npm run build で作り直します。
  *
  * JavaScript の部品(ファイル)と役割。下の「// src/○○.js」の印から各ファイルの中身が始まります
- *   papers.js — 用紙の大きさ(A2〜B5)と、図面枠(用紙の内側10mm)の位置。
- *   viewTransform.js — 座標の変換: 実寸(mm) ⇔ 用紙の上(mm、縮尺をかけた大きさ) ⇔ 画面(px)。拡大・縮小と全体表示の計算もここ縮尺の倍率(1:2 なら 0.5)
+ *   papers.js — 用紙の大きさ(A2〜B5)と、図面枠(用紙の内側10mm)の位置
+ *   viewTransform.js — 座標の変換: 実寸(mm) ⇔ 用紙の上(mm、縮尺をかけた大きさ) ⇔ 画面(px)。拡大・縮小と全体表示の計算もここ
  *   gridCalc.js — 方眼(グリッド)の間隔。自動のときは、拡大・縮小に合わせて見やすい間隔(画面で8px以上)を選ぶ
  *   geometry.js — 図形の計算に使う基本の幾何(距離・角度・交点・丸めなど)。画面にもデータにも依存しない関数だけを置く
  *   dims.js — 寸法・引出線・粗さ記号・公差枠・バルーンの見た目(線・矢印・文字の位置)を計算する。画面の描画とSVG出力(印刷)の両方がこの計算を使う。後から向き・寸法線の位置を直す関数もここ
- *   titleBlock.js — 表題欄。図面枠内側の右下に固定配置する。尺度・用紙は図面設定から自動反映(bind)で手入力不可(要件§11)。
- *   hatch.js — ハッチング(断面の斜線)。閉じた図形(矩形・円・楕円・閉じた連続線)を境界として、平行線を偶奇規則でクリップして生成する。依存は geometry.js のみ(model.js との循環を避けるため辺の展開は自前)。
- *   bom.js — 部品表(BOM)。表として1枚の図面上に自由配置する。
- *   groups.js — 図形のまとまり(グループ)。同じ group 番号を持つ図形は、選択・移動・複製などで1つとして扱う。ねじ穴の道具が作る。「分解」で group を外すと別々の図形に戻る。
+ *   titleBlock.js — 表題欄。図面枠の内側の右下に置く(位置は動かせない)。尺度・用紙は図面の設定から自動で入り(bind)、手では書き換えられない
+ *   hatch.js — ハッチング(断面の斜線)。閉じた図形(矩形・円・楕円・閉じた連続線)を範囲として、平行線を範囲の内側だけ残して作る(内側かどうかは境目を横切った回数の偶奇で決める)。使うのは geometry.js だけ(model.js と互いに読み込み合わないよう、辺を並べる処理はここに持つ)
+ *   bom.js — 部品表(BOM)。表を図面の上の好きな位置に置く
+ *   groups.js — 図形のまとまり(グループ)。同じ group 番号を持つ図形は、選択・移動・複製などで1つとして扱う。ねじ穴の道具が作る。「分解」で group を外すと別々の図形に戻る
  *   model.js — 図面のデータ(図形の一覧・用紙・縮尺・レイヤー・表題欄など)と、図形に対する基本の操作(移動・回転・反転・拡大縮小・複製・当たり判定・吸着点・囲む四角など)。画面には依存しない
- *   follow.js — 寸法・引出線・バルーン・粗さ記号・ハッチ・中心線を、くっついている図形の変更に追従させる。編集の前の図形(before)と編集の後(doc)を比べ、形が変わった図形の「端・真ん中・中心」や「線の上の同じ位置」にぴったり付いていた点を、新しい位置へ移す。付いているかどうかは座標の一致で調べるので、これまでに描いた図面にもそのまま効く。
- *   grips.js — 選んだ図形の「つまみ」(グリップ)。端・角・辺の真ん中などの小さな四角をドラッグすると、その点だけを動かして形を変える(直線を延ばす、四角の大きさを変える、寸法の補助線を動かす など)。
+ *   follow.js — 寸法・引出線・バルーン・粗さ記号・ハッチ・中心線を、くっついている図形の変更に追従させる。編集の前の図形(before)と編集の後(doc)を比べ、形が変わった図形の「端・真ん中・中心」や「線の上の同じ位置」にぴったり付いていた点を、新しい位置へ移す。付いているかどうかは座標の一致で調べるので、これまでに描いた図面にもそのまま効く
+ *   grips.js — 選んだ図形の「つまみ」(グリップ)。端・角・辺の真ん中などの小さな四角をドラッグすると、その点だけを動かして形を変える(直線を延ばす、四角の大きさを変える、寸法の補助線を動かす など)
  *   snap.js — 点スナップ: マウスの近くにある図形の端・真ん中・中心・円周の点・交点を探して吸い付ける
- *   entityStyle.js — 線の太さ・文字高さ(いずれも用紙mm)。要素ごとに widthMm / textMm で上書きでき、未指定の要素は種類・線種ごとの既定値で描く。
- *   toolInfo.js — ツールの名前・ショートカットキー・説明・操作の案内。ボタンのツールチップ、カーソル横の操作ガイド、キー操作で共用する(専門用語はなるべく避ける)
+ *   entityStyle.js — 線の太さ・文字高さ(どちらも用紙mm)。図形ごとに widthMm・textMm で変えられ、指定のない図形は種類・線種ごとの決まった値で描く
+ *   toolInfo.js — 道具の名前・ショートカットキー・説明・操作の案内。ボタンのツールチップ、カーソル横の操作ガイド、キー操作で共用する(専門用語はなるべく避ける)
  *   menuModel.js — 右クリックメニューの項目。選択中の図形や作図の状態から、表示する項目を決める。項目: { id, label, key?, disabled?, checked?, children? } / 区切り: { separator: true }
  *   origin.js — 原点(座標の0の位置)の計算。原点を数値で動かす・初期位置(用紙の枠の左下)に戻すときに使う
- *   popupMenu.js — 右クリックメニューの表示(項目の中身は menuModel.js が決める)。子項目を持つ行はマウスを乗せると右側に子メニューを開く。
- *   helpScreenshots.js — npm run help:capture で実画面から生成。手作業で画面を描き直さない。
+ *   popupMenu.js — 右クリックメニューの表示(項目の中身は menuModel.js が決める)。子項目を持つ行はマウスを乗せると右側に子メニューを開く
+ *   helpScreenshots.js — npm run help:capture で実画面から生成。手作業で画面を描き直さない
  *   helpDetails.js — ヘルプ各項目の「開く場所・具体例・確認すること・うまくいかないとき」と、使う実画面の図。helpContent.js の本文に、図と確認の欄を組み込んで完成版にする
- *   helpContent.js — 日本語ヘルプの本文。図は実アプリの撮影画像へ差し替え、詳細と共通化する。
- *   helpView.js — ヘルプ画面(目次・検索・本文)。本文は helpContent.js の静的なHTML。
- *   guides.js — 投影補助線(第三角法)と45°ミラー線。一時ガイドでありエンティティとしては保存しない(§8a)。
- *   svgExport.js — SVGエクスポート(一次出力形式)。用紙実寸mmで出力する。印刷ONのレイヤーのみ含める。グリッド・投影ガイドは含めない。
- *   thread.js — ねじ穴(タップ穴)のワンクリック生成。JIS B 0205 並目ねじの呼び径と下穴径(≒呼び径-ピッチ、慣用値)。
- *   polygon.js — 正多角形(すべての辺の長さと角の大きさが等しい多角形)の作図計算。できあがりは閉じた連続線の頂点(実寸mm)。
- *   editOps.js — トリム・延長・オフセット(Phase 4 では対象を絞った実装)- トリム/延長: 直線(line)のみ対象。境界は全要素の線分と円/円弧(円として扱う)
- *   snapshotStore.js — クラッシュ復元用の自動スナップショット(IndexedDB)。ファイルへの保存とは別の、ブラウザ内の安全網。正式な保存は手動のまま。
+ *   helpContent.js — 日本語ヘルプの本文。図は実際の画面を撮った画像に差し替え、helpDetails.js の詳細と組み合わせる
+ *   helpView.js — ヘルプ画面(目次・検索・本文)。本文は helpContent.js に書いてあるHTML
+ *   guides.js — 投影補助線(第三角法)と45°ミラー線。その場だけの目印で、図形としては保存しない
+ *   svgExport.js — SVG の書き出し(印刷にも使う主な出力)。用紙の実際の大きさ(mm)で書き出す。印刷がオンのレイヤーだけを含める。方眼・投影ガイドは含めない
+ *   thread.js — ねじ穴(タップ穴)を1回のクリックで作る。JIS B 0205 並目ねじの呼び径と下穴径(≒呼び径-ピッチ、慣用値)
+ *   polygon.js — 正多角形(すべての辺の長さと角の大きさが等しい多角形)の作図計算。できあがりは閉じた連続線の頂点(実寸mm)
+ *   editOps.js — トリム・延長・フィレット・面取り・オフセットの形の計算。トリム・延長は直線(line)だけが対象で、境目になるのはすべての図形の線分と円・円弧(円弧は円として扱う)
+ *   snapshotStore.js — 異常終了したときに復元するための、自動の控え(ブラウザの IndexedDB に置く)。ファイルへの保存とは別の、ブラウザの中の安全網。正式な保存は手動のまま
  *   serializer.js — 図面ファイル(JSON)への書き出しと読み込み。古いファイルも、足りない設定を補って開けるようにする
- *   history.js — 元に戻す・やり直しの履歴。変更する前の図面(図形と設定)を文字にして積んでおく履歴を作る(limit 回分まで覚える)
+ *   history.js — 元に戻す・やり直しの履歴。変更する前の図面(図形と設定)を文字にして積んでおく
  *   renderer.js — 画面(キャンバス)への描画。用紙・方眼・図形・寸法・選択の強調・つまみ・吸着の印・描きかけの形などを、今の表示倍率で描く。図面のデータは変えない
  *   fileio.js — 図面ファイルの保存と読み込み。Chrome・Edge ではファイルを直接開いて同じファイルへ上書き保存し、ほかのブラウザではダウンロードとファイル選択の画面で代わりをする
  *   app.js — 製図ツールの本体。画面の部品(ボタン・入力欄・キャンバス)と図面のデータをつなぎ、マウス・キーボードの操作を道具ごとの処理に振り分ける。図形・寸法・吸着・追従などの計算そのものは別のファイルの関数に任せ、ここでは「どの操作で何をするか」と「画面の表示をどう更新するか」を受け持つ。主な流れ: マウス操作 → handleToolPointerDown/Move/Up(道具ごとの処理)→ commit(元に戻す用の記録・寸法などの追従)→ render(描き直しと欄の更新)

@@ -1,5 +1,5 @@
 // 正多角形(すべての辺の長さと角の大きさが等しい多角形)の作図計算。
-// できあがりは閉じた連続線の頂点(実寸mm)。
+// できあがりは閉じた連続線の頂点(実寸mm)
 import { round6 } from './geometry.js';
 import { parseNumber } from './model.js';
 
@@ -27,7 +27,7 @@ function circumradius(sides, size, mode) {
   return size / 2;
 }
 
-// 中心からクリック点(辺の真ん中 or 角)までの距離 → 大きさの値
+// 中心からクリック点(辺の真ん中か角)までの距離 → 大きさの値
 function sizeFromDistance(sides, dist, mode) {
   if (mode === 'edge') return 2 * dist * Math.sin(Math.PI / sides);
   return 2 * dist;
@@ -46,7 +46,7 @@ export function regularPolygonPoints(center, sides, size, angleDeg, mode = 'side
 }
 
 // マウスの位置から大きさと向きを決める。ふだんは向きを15°刻みに丸め、中心からの距離は
-// その向きに測る(グリッドの点を少し外れても大きさ・向きがずれない)。
+// その向きに測る(方眼の点を少し外れても大きさ・向きがずれない)。
 // exact=true(点スナップで吸い付いた点)なら、その点にぴったり合わせる
 export function polygonFromCursor(center, cursor, sides, mode, exact = false) {
   const dx = cursor.x - center.x;

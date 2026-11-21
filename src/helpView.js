@@ -1,4 +1,4 @@
-// ヘルプ画面(目次・検索・本文)。本文は helpContent.js の静的なHTML。
+// ヘルプ画面(目次・検索・本文)。本文は helpContent.js に書いてあるHTML
 import { HELP_CATEGORIES, HELP_TOPICS } from './helpContent.js';
 
 // 検索用に本文からタグを除いた文字列

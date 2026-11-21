@@ -1,5 +1,5 @@
 // 図形のまとまり(グループ)。同じ group 番号を持つ図形は、選択・移動・複製などで1つとして扱う。
-// ねじ穴の道具が作る。「分解」で group を外すと別々の図形に戻る。
+// ねじ穴の道具が作る。「分解」で group を外すと別々の図形に戻る
 
 // 図面で使われていない次のグループ番号
 export function nextGroupId(entities) {
@@ -27,7 +27,7 @@ export function withGroupMembers(entities, ids) {
   return out;
 }
 
-// 範囲選択: 枠に入った図形(insideIds)のうち、グループは見えている仲間が全部入った時だけ、
+// 範囲選択: 枠に入った図形(insideIds)のうち、グループは見えている仲間が全部入ったときだけ、
 // 隠れた仲間も含めてまとめて選ぶ(グループを1つの図形として「すっぽり入ったか」で判定)
 export function groupsFullyInside(entities, insideIds, isVisible = () => true) {
   const inside = new Set(insideIds);
@@ -57,7 +57,7 @@ export function ungroupEntities(entities, ids) {
   return groups.size;
 }
 
-// 複製した図形(のプロパティ)のグループを、元と別の新しい番号 firstFreeId, +1, … に付け替える。
+// 複製した図形(のデータ)のグループを、元と別の新しい番号 firstFreeId, +1, … に付け替える。
 // 元が同じグループだった図形どうしは、複製後も同じグループになる
 export function renumberGroups(items, firstFreeId) {
   const map = new Map();

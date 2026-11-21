@@ -1,5 +1,5 @@
-// ねじ穴(タップ穴)のワンクリック生成。
-// JIS B 0205 並目ねじの呼び径と下穴径(≒呼び径-ピッチ、慣用値)。
+// ねじ穴(タップ穴)を1回のクリックで作る。
+// JIS B 0205 並目ねじの呼び径と下穴径(≒呼び径-ピッチ、慣用値)
 export const THREAD_SIZES = {
   M3: { dia: 3, drill: 2.5 },
   M4: { dia: 4, drill: 3.3 },
@@ -10,9 +10,9 @@ export const THREAD_SIZES = {
   M12: { dia: 12, drill: 10.2 },
 };
 
-// 上面視のねじ穴を構成するエンティティ群(実寸mm)を返す。
-// JIS表現: 下穴=太実線の円、ねじ谷=細実線の3/4円弧、中心線の十字。
-// overhang は中心線のはみ出し量(実寸mm)。
+// 上から見たねじ穴を形づくる図形(実寸mm)を返す。
+// JIS の描き方: 下穴=太い実線の円、ねじ谷=細い実線の3/4の円弧、中心線の十字。
+// overhang は中心線のはみ出す長さ(実寸mm)
 export function threadHoleEntities(center, size, overhang = 3) {
   const spec = THREAD_SIZES[size];
   if (!spec) return null;

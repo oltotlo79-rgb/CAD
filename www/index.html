@@ -46,7 +46,7 @@
     <div class="group fixed">
       <button class="tool active" data-tool="select">選択</button>
     </div>
-    <!-- 「ファイル」タブ: 新規・開く・保存・名前を付けて保存 / SVG出力・印刷 -->
+    <!-- 「ファイル」タブ: 新規・開く・保存・名前を付けて保存、SVG出力・印刷 -->
     <div class="panel" data-panel="file">
       <div class="group">
         <button id="file-new" title="新規&#10;新しい白紙の図面を始める">新規</button>
@@ -59,7 +59,7 @@
         <button id="print" title="印刷&#10;印刷画面を開く。倍率は100%(実際のサイズ)を選ぶと実寸で印刷。「PDFに保存」でPDFにもできる">印刷</button>
       </div>
     </div>
-    <!-- 「作図」タブ: 直線〜文字の作図 / 正多角形(右の欄は角の数) / ねじ穴(右のメニューはねじの太さ) -->
+    <!-- 「作図」タブ: 直線〜文字の作図、正多角形(右の欄は角の数)、ねじ穴(右のメニューはねじの太さ) -->
     <div class="panel active" data-panel="draw">
       <div class="group">
         <button class="tool" data-tool="line">直線</button>
@@ -84,7 +84,7 @@
         </select>
       </div>
     </div>
-    <!-- 「寸法・記号」タブ: 寸法・φ・R・角度・C・引出線 / 粗さ・公差枠 / ハッチ(斜線の角度・間隔) / バルーン・部品表 -->
+    <!-- 「寸法・記号」タブ: 寸法・φ・R・角度・C・引出線、粗さ・公差枠、ハッチ(斜線の角度・間隔)、バルーン・部品表 -->
     <div class="panel" data-panel="annotate">
       <div class="group">
         <button class="tool" data-tool="dim">寸法</button>
@@ -108,7 +108,7 @@
         <button class="tool" data-tool="bom">部品表</button>
       </div>
     </div>
-    <!-- 「編集」タブ: 回転・拡大縮小(右の欄に角度・倍率) / 反転・分解・グループ化 / トリム・延長 / オフセット / フィレット・面取り -->
+    <!-- 「編集」タブ: 回転・拡大縮小(右の欄に角度・倍率)、反転・分解・グループ化、トリム・延長、オフセット、フィレット・面取り -->
     <div class="panel" data-panel="edit">
       <div class="group">
         <button id="rotate" title="回転&#10;選んだ図形を、右の角度だけ回す（＋は左回り、－は右回り）">回転</button>
@@ -136,7 +136,7 @@
         <label title="角を丸める半径 / 切り落とす大きさ(mm)">サイズ<input id="fillet-r" size="4" value="5"></label>
       </div>
     </div>
-    <!-- 「表示・設定」タブ: 用紙・縮尺 / 方眼とスナップ / 投影ガイド・45°線 / 原点・レイヤー・線種の間隔・操作ガイド -->
+    <!-- 「表示・設定」タブ: 用紙・縮尺、方眼とスナップ、投影ガイド・45°線、原点・レイヤー・線種の間隔・操作ガイド -->
     <div class="panel" data-panel="view">
       <div class="group">
         <label title="用紙の大きさ">用紙 <select id="paper-size">
@@ -218,7 +218,7 @@
   <span id="np-title">数値入力:</span>
   <span id="np-fields"></span>
   <button id="num-draw">作図</button>
-  <!-- 「作図」ボタンの右に足す部品(原点設定の「初期位置に戻す」と今の原点の位置) -->
+  <!-- 「作図」ボタン(原点設定のときは「移動」)の右に足す部品(「初期位置に戻す」ボタンと今の原点の位置) -->
   <span id="np-extra"></span>
   <span class="hint">Escで中止 / 右クリックでメニュー / 寸法値・表題欄・部品表のマスはダブルクリックで記入 / 困ったら F1 でヘルプ</span>
 </section>

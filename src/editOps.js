@@ -1,5 +1,5 @@
-// トリム・延長・オフセット(Phase 4 では対象を絞った実装)
-// - トリム/延長: 直線(line)のみ対象。境界は全要素の線分と円/円弧(円として扱う)
+// トリム・延長・フィレット・面取り・オフセットの形の計算。
+// トリム・延長は直線(line)だけが対象で、境目になるのはすべての図形の線分と円・円弧(円弧は円として扱う)
 import { entitySegments } from './model.js';
 import { strokeStyleOf } from './entityStyle.js';
 import {
@@ -7,7 +7,7 @@ import {
   raySegIntersection, rayCircleIntersections,
 } from './geometry.js';
 
-// 対象直線と他要素との交点を、直線のパラメータt(0..1)で列挙する
+// 直線とほかの図形との交点を、直線の上の位置 t(始点0〜終点1)の一覧で返す
 function intersectionParams(line, others) {
   const a = { x: line.x1, y: line.y1 };
   const b = { x: line.x2, y: line.y2 };
@@ -34,7 +34,7 @@ function intersectionParams(line, others) {
 }
 
 // クリック位置を挟む交点間の区間を取り除く。
-// 戻り値: 置き換え後の線分プロパティ配列(交点がなければ null = 何もしない)
+// 戻り値: 置き換える線分のデータの配列(交点がなければ null = 何もしない)
 export function trimLine(line, clickPoint, others) {
   const ts = intersectionParams(line, others);
   if (ts.length === 0) return null;
@@ -64,8 +64,8 @@ export function trimLine(line, clickPoint, others) {
   return pieces;
 }
 
-// クリックに近い側の端点を、他要素との最寄り交点まで延長する。
-// 戻り値: 新しい端点座標 {x1,y1,x2,y2} | null(交点がない場合)
+// クリックに近いほうの端を、ほかの図形とのいちばん近い交点まで延ばす。
+// 戻り値: 新しい端の座標 {x1,y1,x2,y2} | null(交点がないとき)
 export function extendLine(line, clickPoint, others) {
   const p1 = { x: line.x1, y: line.y1 };
   const p2 = { x: line.x2, y: line.y2 };
@@ -96,17 +96,17 @@ export function extendLine(line, clickPoint, others) {
 }
 
 // フィレット: 2本の直線の角に半径rの円弧を入れる。
-// click1/click2 は各線分上のクリック位置(残す側の判定に使う)。
+// click1・click2 はそれぞれの線分の上のクリック位置(残す側を決めるのに使う)。
 // 戻り値: { l1:{x1..y2}, l2:{...}, arc:{cx,cy,r,startAngle,endAngle} } | null
 export function filletLines(l1, click1, l2, click2, r) {
   const d1 = { x: l1.x2 - l1.x1, y: l1.y2 - l1.y1 };
   const d2 = { x: l2.x2 - l2.x1, y: l2.y2 - l2.y1 };
   const denom = d1.x * d2.y - d1.y * d2.x;
-  if (Math.abs(denom) < 1e-12) return null; // 平行
-  // 無限直線同士の交点P
+  if (Math.abs(denom) < 1e-12) return null; // 平行なら交わらない
+  // 2本の直線を延ばしたときの交点 P
   const t = ((l2.x1 - l1.x1) * d2.y - (l2.y1 - l1.y1) * d2.x) / denom;
   const P = { x: l1.x1 + d1.x * t, y: l1.y1 + d1.y * t };
-  // 各線について、クリック側へ向かう単位ベクトル
+  // それぞれの線で、クリックした側へ向かう長さ1の向き
   const unitToward = (d, click) => {
     const len = Math.hypot(d.x, d.y) || 1;
     let u = { x: d.x / len, y: d.y / len };
@@ -130,7 +130,7 @@ export function filletLines(l1, click1, l2, click2, r) {
   let a2 = Math.atan2(T2.y - C.y, T2.x - C.x) * 180 / Math.PI;
   let sweep = a2 - a1;
   while (sweep < 0) sweep += 360;
-  if (sweep > 180) [a1, a2] = [a2, a1]; // 劣弧を採用
+  if (sweep > 180) [a1, a2] = [a2, a1]; // 小さいほうの弧を使う
   while (a2 <= a1) a2 += 360;
 
   // P に近い側の端点を接点に置き換える(必要なら延長にもなる)
@@ -181,7 +181,7 @@ export function chamferLines(l1, click1, l2, click2, size) {
   };
 }
 
-// 平行複製。sidePoint 側に distance だけずらした複製のプロパティを返す
+// 平行なコピー。sidePoint の側に distance だけずらしたコピーのデータを返す
 export function offsetEntity(e, dist, sidePoint) {
   if (dist <= 0) return null;
   if (e.type === 'line') {
@@ -209,7 +209,7 @@ export function offsetEntity(e, dist, sidePoint) {
     return props;
   }
   if (e.type === 'rect') {
-    // 回転矩形にも対応: ローカル座標で内外判定し、ローカル系で膨張/収縮する
+    // 回転した矩形にも対応: 回転前の向きの座標で内側か外側かを調べ、その座標で広げる・縮める
     const rot = ((e.rotation ?? 0) * Math.PI) / 180;
     const c = Math.cos(rot);
     const s = Math.sin(rot);

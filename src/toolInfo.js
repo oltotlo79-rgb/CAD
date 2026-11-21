@@ -1,8 +1,8 @@
-// ツールの名前・ショートカットキー・説明・操作の案内。
+// 道具の名前・ショートカットキー・説明・操作の案内。
 // ボタンのツールチップ、カーソル横の操作ガイド、キー操作で共用する(専門用語はなるべく避ける)
 import { boundaryFromEntity } from './hatch.js';
 
-// key: 1文字ならそのキーでツールを選べる。steps: 作図の段階ごとの案内
+// key: 1文字ならそのキーで道具を選べる。steps: 作図の段階ごとの案内
 export const TOOL_INFO = {
   select: {
     label: '選択', key: 'Esc',
@@ -129,7 +129,7 @@ export const TOOL_INFO = {
   },
 };
 
-// 1文字キー → ツール(大文字小文字を区別しない)
+// 1文字キー → 道具(大文字小文字を区別しない)
 export function toolForKey(key) {
   if (typeof key !== 'string' || key.length !== 1) return null;
   const upper = key.toUpperCase();
@@ -151,10 +151,11 @@ export function guideFor(tool, stage) {
   return `${TOOL_INFO[tool].label}: ${steps[Math.min(stage, steps.length - 1)]}`;
 }
 
-// そのツールでクリックして使える図形か(マウスを乗せた時の強調表示に使う)
+// 直線か
 const isLine = (e) => e.type === 'line';
 // 円か円弧か
 const isRound = (e) => e.type === 'circle' || e.type === 'arc';
+// 道具ごとに、クリックして使える図形かを調べる関数(マウスを乗せたときの強調表示に使う)
 const PICKABLE = {
   select: () => true,
   trim: isLine,

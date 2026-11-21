@@ -1,6 +1,6 @@
-// 用紙の大きさ(A2〜B5)と、図面枠(用紙の内側10mm)の位置。
+// 用紙の大きさ(A2〜B5)と、図面枠(用紙の内側10mm)の位置
 
-// 縦置き(portrait)基準の寸法。B列はJIS B。
+// 縦置き(portrait)のときの寸法。B列は JIS の B 列
 export const PAPER_SIZES = {
   A2: { width: 420, height: 594 },
   A3: { width: 297, height: 420 },
@@ -21,7 +21,7 @@ export function paperDimensions(size, orientation) {
     : { width: base.width, height: base.height };
 }
 
-// 用紙mm・左下原点の図面枠矩形
+// 図面枠の四角(用紙mm・用紙の左下が0)
 export function frameRect(size, orientation) {
   const { width, height } = paperDimensions(size, orientation);
   return {

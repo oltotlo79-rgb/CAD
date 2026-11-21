@@ -1,4 +1,4 @@
-// npm run help:capture で実画面から生成。手作業で画面を描き直さない。
+// npm run help:capture で実画面から生成。手作業で画面を描き直さない
 export const HELP_SCREENSHOTS = {
   "overview": {
     "src": "help/screenshots/overview.png",
