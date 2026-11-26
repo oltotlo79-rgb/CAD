@@ -1,16 +1,32 @@
 # 文字コード・改行の扱いを PC ごとの設定に左右されないよう固定する
 # テキストは git の中では LF で統一し、取り出す側の OS に合わせて改行を変換する
+# (文字コードは変換しない。テキストはすべて UTF-8 で保存している)
 * text=auto
 
-# Excel などの Office ファイル・画像は中身を一切変換しない(改行変換で壊れるのを防ぐ)
+# PowerPoint・Excel・Word などの Office ファイルは中身を一切変換しない
+# (改行の変換などで壊れて、他の PC で開けない・文字化けするのを防ぐ)
+*.pptx binary
+*.pptm binary
+*.ppt  binary
+*.ppsx binary
+*.potx binary
 *.xlsx binary
 *.xlsm binary
 *.xls  binary
+*.xltx binary
 *.docx binary
-*.pptx binary
+*.docm binary
+*.doc  binary
+*.dotx binary
+
+# PDF・画像・圧縮ファイルも中身を一切変換しない
 *.pdf  binary
 *.png  binary
 *.jpg  binary
 *.jpeg binary
 *.gif  binary
+*.bmp  binary
+*.webp binary
 *.ico  binary
+*.zip  binary
+*.7z   binary
